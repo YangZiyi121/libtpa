@@ -52,7 +52,7 @@ static void zero_copy_write_done(void *iov_base, void *iov_param)
 	assert(iov_param == BUF_TYPE_EXTERNAL);
 }
 
-#define PAGE_SIZE		4096
+#define PAGE_SIZE		8192
 #define EXTBUF_SIZE		(1*PAGE_SIZE)
 
 /* Note that it's basically a Mellanox only thing. */
@@ -117,7 +117,7 @@ static int poll_stdin(void)
 {
 	struct epoll_event event;
 	int has_input;
-	char line[4096];
+	char line[8192];
 
 	if (!connected)
 		return 0;
