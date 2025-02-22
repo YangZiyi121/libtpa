@@ -148,7 +148,7 @@ void show_stats(void)
 	struct thread_stats last_stats[ctx.nr_thread];
 	int loop = 0;
 	int i;
-
+	int total_duration = ctx.duration; // store duration
 	memset(last_stats, 0, sizeof(last_stats));
 	do {
 		sleep(1);
@@ -160,7 +160,7 @@ void show_stats(void)
 	} while (--ctx.duration);
 
 	for (i = 0; i < ctx.nr_thread; i++) {
-	      printf("Total throughput = %ld ; count = %ld ; packet_size =  %d ; duration = %d\n",((ctx.stats[i].latency.count * ctx.message_size)/ctx.duration) , ctx.stats[i].latency.count, ctx.message_size, ctx.duration);
+	  printf("Total throughput = %f; count = %ld ; packet_size =  %d ; duration = %d\n",((ctx.stats[i].latency.count * ctx.message_size * 8)/(float)(total_duration > 0 ? total_duration : 1)), ctx.stats[i].latency.count, ctx.message_size, total_duration);
 	}
 
 	printf("\n---\n");
