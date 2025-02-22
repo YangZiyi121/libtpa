@@ -159,6 +159,10 @@ void show_stats(void)
 		}
 	} while (--ctx.duration);
 
+	for (i = 0; i < ctx.nr_thread; i++) {
+	      printf("Total throughput = %ld ; count = %ld ; packet_size =  %d ; duration = %d\n",((ctx.stats[i].latency.count * ctx.message_size)/ctx.duration) , ctx.stats[i].latency.count, ctx.message_size, ctx.duration);
+	}
+
 	printf("\n---\n");
 	for (i = 0; i < ctx.nr_thread; i++) {
 		printf("%2d nr_conn=%lu nr_zero_io_conn=%lu\n",
