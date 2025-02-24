@@ -132,14 +132,56 @@ static void show_rw_stats(int loop, struct thread_stats *last_stats)
 		to_Gbs(total.bytes_write));
 }
 
+static void show_rr_rw_stats(int loop, struct thread_stats *last_stats)
+{
+	uint64_t count;
+	uint64_t sum;
+	struct rw_stats stats[ctx.nr_thread];
+	struct rw_stats total;
+	int i;
+
+	memset(&total, 0, sizeof(total));
+	for (i = 0; i < ctx.nr_thread; i++) {
+		stats[i].bytes_read  = ctx.stats[i].rw_stats.bytes_read  - last_stats[i].rw_stats.bytes_read;
+		stats[i].bytes_write = ctx.stats[i].rw_stats.bytes_write - last_stats[i].rw_stats.bytes_write;
+		total.bytes_read  += stats[i].bytes_read;
+		total.bytes_write += stats[i].bytes_write;
+	}
+
+	for (i = 0; i < ctx.nr_thread; i++) {
+		count = ctx.stats[i].latency.count - last_stats[i].latency.count;
+		sum   = ctx.stats[i].latency.sum   - last_stats[i].latency.sum;
+
+		printf("%5d %-2s .%d min=%.2fus avg=%.2fus max=%.2fus %.3f read Gbits/sec  %.3f write Gbits/sec count=%lu\n",
+		       loop, test_to_str_short(ctx.test), i,
+		       to_us(ctx.stats[i].latency.min),
+		       to_us(sum / (count ? : -1ull)),
+		       to_us(ctx.stats[i].latency.max),
+		       to_Gbs(stats[i].bytes_read),
+		       to_Gbs(stats[i].bytes_write),
+		       count);
+
+		/* reset here; though we may have race condition issue */
+		ctx.stats[i].latency.min = 0;
+		ctx.stats[i].latency.max = 0;
+	}
+
+	printf("%7d %-7s Total-Throughput %.3f read Gbits/sec  %.3f write Gbits/sec\n",
+		loop, test_to_str_short(ctx.test),
+		to_Gbs(total.bytes_read),
+		to_Gbs(total.bytes_write));
+
+}
+
+
 static void do_show_stats(int loop, struct thread_stats *last_stats)
 {
-        if (ctx.test == TEST_RR || ctx.test == TEST_CRR) {
-	        printf("-------------- Latency ----------------------------\n");
-	        show_rr_stats(loop, last_stats);
-		printf("-------------- Throughput -------------------------\n");
+        if (ctx.test == TEST_RR || ctx.test == TEST_CRR)
+	      //show_rr_stats(loop, last_stats);
+	      show_rr_rw_stats(loop, last_stats);
+	else
 		show_rw_stats(loop, last_stats);
-        }
+
 	if (ctx.nr_thread > 1)
 		printf("\n");
 }
