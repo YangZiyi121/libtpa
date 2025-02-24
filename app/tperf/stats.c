@@ -152,7 +152,7 @@ static void show_rr_rw_stats(int loop, struct thread_stats *last_stats)
 		count = ctx.stats[i].latency.count - last_stats[i].latency.count;
 		sum   = ctx.stats[i].latency.sum   - last_stats[i].latency.sum;
 
-		printf("%5d %-2s .%d min=%.2fus avg=%.2fus max=%.2fus %.3f read Gbits/sec  %.3f write Gbits/sec count=%lu\n",
+		printf("%5d %-2s .%d min=%.2fus avg=%.2fus max=%.2fus read(Gbits/sec)=%.3f write(Gbits/sec)=%.3f count=%lu\n",
 		       loop, test_to_str_short(ctx.test), i,
 		       to_us(ctx.stats[i].latency.min),
 		       to_us(sum / (count ? : -1ull)),
@@ -166,7 +166,7 @@ static void show_rr_rw_stats(int loop, struct thread_stats *last_stats)
 		ctx.stats[i].latency.max = 0;
 	}
 
-	printf("%7d %-7s Total-Throughput %.3f read Gbits/sec  %.3f write Gbits/sec\n",
+	printf("%5d %-2s Total-Throughput read(Gbits/sec)=%.3f write(Gbits/sec)=%.3f\n",
 		loop, test_to_str_short(ctx.test),
 		to_Gbs(total.bytes_read),
 		to_Gbs(total.bytes_write));
