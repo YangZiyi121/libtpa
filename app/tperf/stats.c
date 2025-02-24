@@ -134,11 +134,12 @@ static void show_rw_stats(int loop, struct thread_stats *last_stats)
 
 static void do_show_stats(int loop, struct thread_stats *last_stats)
 {
-	if (ctx.test == TEST_RR || ctx.test == TEST_CRR)
-		show_rr_stats(loop, last_stats);
-	else
+        if (ctx.test == TEST_RR || ctx.test == TEST_CRR) {
+	        printf("-------------- Latency ----------------------------\n");
+	        show_rr_stats(loop, last_stats);
+		printf("-------------- Throughput -------------------------\n");
 		show_rw_stats(loop, last_stats);
-
+        }
 	if (ctx.nr_thread > 1)
 		printf("\n");
 }
@@ -148,7 +149,7 @@ void show_stats(void)
 	struct thread_stats last_stats[ctx.nr_thread];
 	int loop = 0;
 	int i;
-	int total_duration = ctx.duration; // store duration
+
 	memset(last_stats, 0, sizeof(last_stats));
 	do {
 		sleep(1);
@@ -158,10 +159,6 @@ void show_stats(void)
 			memcpy(&last_stats, ctx.stats, sizeof(last_stats));
 		}
 	} while (--ctx.duration);
-
-	for (i = 0; i < ctx.nr_thread; i++) {
-	  printf("Total throughput = %f; count = %ld ; packet_size =  %d ; duration = %d\n",((ctx.stats[i].latency.count * ctx.message_size * 8)/(float)(total_duration > 0 ? total_duration : 1)), ctx.stats[i].latency.count, ctx.message_size, total_duration);
-	}
 
 	printf("\n---\n");
 	for (i = 0; i < ctx.nr_thread; i++) {
