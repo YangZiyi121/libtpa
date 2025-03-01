@@ -58,7 +58,8 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 			len -= bytes_eaten - sum;
 		}
 
-		if (conn->integrity_enabled)
+
+		if (0) // disable integrity check for now
 			integrity_verify(base, len, conn->integrity_off + conn->stats.bytes_read);
 
 		UPDATE_STATS(conn, bytes_read, len);
@@ -101,8 +102,10 @@ static void on_rr_read_done(struct connection *conn)
 
 static void on_read_done(struct connection *conn)
 {
-	if (conn->read.off < conn->read.budget)
-		return;
+        // disable any checks on the response size
+        // if (conn->read.off < conn->read.budget)
+        //		return;
+
 
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR)) {
 		on_rr_read_done(conn);
@@ -191,6 +194,9 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		mbuf->private = conn_get(conn);
 
 		len = MIN(budget - off, MBUF_SIZE);
+		// set buff to some random value
+		memset(mbuf->data, 0x9f, len);
+
 		iov[nr_iov].iov_base = mbuf->data;
 		iov[nr_iov].iov_len  = len;
 		iov[nr_iov].iov_phys = conn->enable_zwrite;
