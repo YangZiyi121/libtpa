@@ -80,8 +80,10 @@ int parse_options(int argc, char **argv)
 	ctx.enable_zwrite = 1;
 	ctx.start_cpu     = -4096;
 	ctx.nr_conn_per_thread = 1;
+	ctx.integrity_enabled = 0;
+	ctx.response_size = ctx.message_size;
 
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:isqh")) != -1) {
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:isqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -143,6 +145,10 @@ int parse_options(int argc, char **argv)
 		case 'i':
 			ctx.integrity_enabled = 1;
 			break;
+
+		case 'R':
+		      PARSE_NUM(ctx.response_size, optarg, NUM_TYPE_SIZE, "response size");
+		      break;
 
 		case 'q':
 			ctx.quiet = 1;

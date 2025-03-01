@@ -10,12 +10,14 @@
 void init_server_conn(struct connection *conn)
 {
 	int message_size = conn->info.message_size;
+	int response_size = conn->info.response_size;
 
 	conn->test = conn->info.test;
 	conn->integrity_enabled = conn->info.integrity_enabled;
-	conn->integrity_off = conn->info.integrity_off;;
+	conn->integrity_off = conn->info.integrity_off;
 	conn->enable_zwrite = conn->info.enable_zwrite;
 	conn->message_size = message_size;
+	conn->response_size = response_size;
 
 	switch (conn->test) {
 	case TEST_READ:

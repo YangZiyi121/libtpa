@@ -71,6 +71,7 @@ struct ctx {
 	int enable_zwrite;
 	int port;
 	int quiet;
+       int response_size;
 
 	struct test_thread *threads;
 	struct thread_stats *stats;

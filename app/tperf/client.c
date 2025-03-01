@@ -11,6 +11,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 {
 	struct connection *conn;
 	int message_size = ctx.message_size;
+	int response_size = ctx.response_size;
 
 	conn = conn_create(thread, sid);
 
@@ -35,7 +36,10 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_RR:
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
-		/* fallthrough */
+		conn->read.budget  = response_size;
+		conn->write.budget = message_size;
+		break;
+
 	case TEST_RW:
 		conn->read.budget  = message_size;
 		conn->write.budget = message_size;

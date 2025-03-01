@@ -93,7 +93,7 @@ static void on_rr_read_done(struct connection *conn)
 	 *   let's start another request.
 	 */
 	if (!conn->is_client || conn->test == TEST_RR) {
-		conn->write.budget = conn->message_size;
+	       conn->write.budget = conn->response_size;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
 
@@ -155,6 +155,7 @@ static int emit_test_info(struct connection *conn)
 	info->integrity_off = conn->integrity_off;
 	info->enable_zwrite = conn->enable_zwrite;
 	info->message_size = conn->message_size;
+	info->response_size = conn->response_size;
 
 	ret = tpa_write(conn->sid, info, sizeof(*info));
 	if (ret != sizeof(*info)) {
