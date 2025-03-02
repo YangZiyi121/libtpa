@@ -76,14 +76,20 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 
 static void on_rr_read_done(struct connection *conn)
 {
-	assert(conn->read.off == conn->read.budget);
-
+  
 	/* we got the respose: the request is done */
 	if (conn->is_client) {
-		update_latency(conn);
-
-		if (conn->test == TEST_CRR)
+	        assert((conn->read.off) == (conn->read.budget - 64));
+	        update_latency(conn);
+		
+		if (conn->test == TEST_CRR){
 			conn->to_close = 1;
+		}
+		else if( conn->test == TEST_RR){
+		  conn->write.budget = conn->message_size;
+		  event_queue_add(conn, TPA_EVENT_OUT);
+		}
+		  
 	}
 
 	/*
@@ -92,11 +98,13 @@ static void on_rr_read_done(struct connection *conn)
 	 * - client and the test is RR: we just got the response,
 	 *   let's start another request.
 	 */
-	if (!conn->is_client || conn->test == TEST_RR) {
-	       conn->write.budget = conn->response_size;
+	if (!conn->is_client) {
+	        assert((conn->read.off) == (conn->read.budget));
+		printf("response size on server %d\n",conn->response_size);
+	        conn->write.budget = conn->message_size - 64;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
-
+	
 	conn->read.off = 0;
 }
 
@@ -157,6 +165,7 @@ static int emit_test_info(struct connection *conn)
 	info->message_size = conn->message_size;
 	info->response_size = conn->response_size;
 
+	printf("client emoit response size %d\n",info->response_size);
 	ret = tpa_write(conn->sid, info, sizeof(*info));
 	if (ret != sizeof(*info)) {
 		if (ret == -1 && errno == EAGAIN)

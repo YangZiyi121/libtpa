@@ -21,7 +21,8 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->integrity_off = get_time_in_ns();
 	conn->enable_zwrite = ctx.enable_zwrite;
 	conn->message_size = message_size;
-
+	conn->response_size = response_size;
+	
 	switch (conn->test) {
 	case TEST_READ:
 		conn->read.budget  = message_size;
@@ -36,7 +37,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_RR:
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
-		conn->read.budget  = response_size;
+		conn->read.budget  = message_size;
 		conn->write.budget = message_size;
 		break;
 
