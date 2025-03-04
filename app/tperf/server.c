@@ -18,6 +18,7 @@ void init_server_conn(struct connection *conn)
 	conn->enable_zwrite = conn->info.enable_zwrite;
 	conn->message_size = message_size;
 	conn->response_size = response_size;
+	conn->func = conn->info.func;
 
 	switch (conn->test) {
 	case TEST_READ:

@@ -76,12 +76,12 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 
 static void on_rr_read_done(struct connection *conn)
 {
-  
+
 	/* we got the respose: the request is done */
 	if (conn->is_client) {
 	        assert((conn->read.off) == (conn->read.budget - 64));
 	        update_latency(conn);
-		
+
 		if (conn->test == TEST_CRR){
 			conn->to_close = 1;
 		}
@@ -89,7 +89,7 @@ static void on_rr_read_done(struct connection *conn)
 		  conn->write.budget = conn->message_size;
 		  event_queue_add(conn, TPA_EVENT_OUT);
 		}
-		  
+
 	}
 
 	/*
@@ -100,11 +100,11 @@ static void on_rr_read_done(struct connection *conn)
 	 */
 	if (!conn->is_client) {
 	        assert((conn->read.off) == (conn->read.budget));
-		printf("response size on server %d\n",conn->response_size);
+		printf("response size on server %d func: %d\n",conn->response_size, conn->func);
 	        conn->write.budget = conn->message_size - 64;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
-	
+
 	conn->read.off = 0;
 }
 
@@ -164,6 +164,7 @@ static int emit_test_info(struct connection *conn)
 	info->enable_zwrite = conn->enable_zwrite;
 	info->message_size = conn->message_size;
 	info->response_size = conn->response_size;
+	info->func = conn->func;
 
 	printf("client emoit response size %d\n",info->response_size);
 	ret = tpa_write(conn->sid, info, sizeof(*info));

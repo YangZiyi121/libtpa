@@ -22,7 +22,8 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->enable_zwrite = ctx.enable_zwrite;
 	conn->message_size = message_size;
 	conn->response_size = response_size;
-	
+	conn->func = ctx.func;
+
 	switch (conn->test) {
 	case TEST_READ:
 		conn->read.budget  = message_size;

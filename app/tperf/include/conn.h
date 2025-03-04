@@ -20,7 +20,8 @@ struct test_info {
 	uint32_t integrity_enabled:1;
 	uint32_t enable_zwrite:1;
 	uint32_t integrity_off;
-       uint32_t response_size;
+        uint32_t response_size;
+        uint32_t func;
 } __attribute__((__aligned__(64)));
 
 struct latency {
@@ -50,7 +51,8 @@ struct connection {
 	int enable_zwrite;
 	int integrity_enabled;
 	uint32_t integrity_off;
-       int response_size;
+        uint32_t response_size;
+        uint32_t func;
 
 	struct {
 		size_t off;
