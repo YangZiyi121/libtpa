@@ -14,7 +14,7 @@
 #include "ip.h"
 #include "pktfuzz.h"
 
-#define DEFAULT_MTU			1500
+#define DEFAULT_MTU			9216
 #define DEFAULT_MAX_MTU			9216
 #define PKT_MAX_HDR_LEN			128
 

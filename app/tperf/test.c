@@ -9,14 +9,14 @@
 
 static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int size)
 {
-	uint32_t off = conn->info_off;
+        uint32_t off = conn->info_off;
 	int bytes_eaten = 0;
 	int idx = 0;
 	int len;
 
 	/* if already parsed? */
-	if (off == sizeof(struct test_info))
-		return 0;
+	// if (off == sizeof(struct test_info))
+	//	return 0;
 
 	while (off < sizeof(struct test_info)) {
 		len = MIN(iov[idx].iov_len, sizeof(struct test_info) - off);
@@ -29,8 +29,8 @@ static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int si
 		if (size == 0)
 			break;
 	}
-
 	conn->info_off = off;
+
 	if (off == sizeof(struct test_info))
 		init_server_conn(conn);
 
@@ -136,7 +136,8 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
-		read_test_info(conn, iov, bytes_read);
+		if (!conn->is_client)
+		  read_test_info(conn, iov, bytes_read);
 		read_test_data(conn, iov, bytes_read, 0);
 
 		on_read_done(conn);
@@ -145,6 +146,7 @@ int conn_on_read(struct connection *conn)
 	return 0;
 }
 
+/*
 static int emit_test_info(struct connection *conn)
 {
 	struct test_info *info = &conn->info;
@@ -161,19 +163,20 @@ static int emit_test_info(struct connection *conn)
 	info->response_size = conn->response_size;
 	info->func = conn->func;
 
-	/* ret = tpa_write(conn->sid, info, sizeof(*info)); */
-	/* if (ret != sizeof(*info)) { */
-	/* 	if (ret == -1 && errno == EAGAIN) */
-	/* 		return 0; */
+	ret = tpa_write(conn->sid, info, sizeof(*info));
+	if (ret != sizeof(*info)) {
+		if (ret == -1 && errno == EAGAIN)
+			return 0;
 
-	/* 	fprintf(stderr, "err_emit_test_info: %s\n", strerror(errno)); */
-	/* 	return -1; */
-	/* } */
+		fprintf(stderr, "err_emit_test_info: %s\n", strerror(errno));
+		return -1;
+	}
 
 	//conn->info_off = sizeof(struct test_info);
 
 	return 0;
 }
+*/
 
 static void zwrite_done(void *iov_base, void *iov_param)
 {
@@ -191,6 +194,17 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 	struct mbuf *mbuf;
 	int nr_iov = 0;
 	int len;
+
+	struct test_info *info = &conn->info;
+
+	info->test = conn->test;
+	info->integrity_enabled = conn->integrity_enabled;
+	info->integrity_off = conn->integrity_off;
+	info->enable_zwrite = conn->enable_zwrite;
+	info->message_size = conn->message_size;
+	info->response_size = conn->response_size;
+	info->func = conn->func;
+
 	while (off < budget) {
 		mbuf = mbuf_alloc(thread->mbuf_pool);
 		assert(mbuf != NULL);
@@ -200,8 +214,8 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		len = MIN(budget - off, MBUF_SIZE);
 		// set buff to some random value
 
-		memcpy(mbuf->data, conn->info, sizeof(*info))
-		memset(mbuf->data + sizeof(*info), 0x9f, len);
+		memcpy(mbuf->data, info, sizeof(struct test_info));
+		memset(mbuf->data + BATCH_SIZE, 0x9f, len - BATCH_SIZE);
 
 		iov[nr_iov].iov_base = mbuf->data;
 		iov[nr_iov].iov_len  = len;
@@ -242,8 +256,6 @@ int conn_on_write(struct connection *conn)
 	int nr_iov;
 	int i;
 
-	if (ctx.is_client && emit_test_info(conn) < 0)
-		return -1;
 	while (conn->write.budget) {
 		struct tpa_iovec iov[conn->write.budget / MBUF_SIZE + 1];
 
@@ -253,6 +265,7 @@ int conn_on_write(struct connection *conn)
 		}
 
 		nr_iov = setup_test_data(thread, conn, iov);
+
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
 
 		if (bytes_write < 0) {

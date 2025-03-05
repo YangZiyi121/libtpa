@@ -30,6 +30,7 @@ enum {
 };
 
 #define VAL_SIZE	1024
+#define MAX_RX_BUF_SIZE_USER 4096
 
 struct cfg_spec {
 	const char *name;
