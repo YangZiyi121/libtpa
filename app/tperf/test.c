@@ -60,7 +60,7 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 
 
 		if (0) // disable integrity check for now
-			integrity_verify(base, len, conn->integrity_off + conn->stats.bytes_read);
+		      integrity_verify(base, len, conn->integrity_off + conn->stats.bytes_read);
 
 		UPDATE_STATS(conn, bytes_read, len);
 
@@ -137,7 +137,7 @@ int conn_on_read(struct connection *conn)
 		if (bytes_read == 0)
 			return -1;
 		bytes_eaten = read_test_info(conn, iov, bytes_read);
-		read_test_data(conn, iov, bytes_read, bytes_eaten);
+		read_test_data(conn, iov, bytes_read, 0);
 
 		on_read_done(conn);
 	}
@@ -198,7 +198,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 		mbuf->private = conn_get(conn);
 
-		len = MIN(budget - off, MBUF_SIZE);
+		len = MIN(budget - off, MBUF_SIZE) - BATCH_SIZE;
 		// set buff to some random value
 		memset(mbuf->data, 0x9f, len);
 
