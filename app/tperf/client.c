@@ -39,7 +39,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
 		conn->read.budget  = response_size;
-		conn->write.budget = message_size;
+		conn->write.budget = message_size - 64;
 		break;
 
 	case TEST_RW:

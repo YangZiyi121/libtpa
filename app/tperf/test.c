@@ -84,8 +84,8 @@ static void on_rr_read_done(struct connection *conn)
 		if (conn->test == TEST_CRR){
 			conn->to_close = 1;
 		}
-		else if( conn->test == TEST_RR){
-		  conn->write.budget = conn->message_size;
+		else if(conn->test == TEST_RR){
+		  conn->write.budget = conn->message_size - 64;
 		  event_queue_add(conn, TPA_EVENT_OUT);
 		}
 
@@ -123,7 +123,7 @@ int conn_on_read(struct connection *conn)
 {
 	struct tpa_iovec iov[BATCH_SIZE];
 	int bytes_read;
-	int bytes_eaten;
+	//int bytes_eaten;
 
 	while (1) {
 		bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
@@ -136,7 +136,7 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
-		bytes_eaten = read_test_info(conn, iov, bytes_read);
+		read_test_info(conn, iov, bytes_read);
 		read_test_data(conn, iov, bytes_read, 0);
 
 		on_read_done(conn);
@@ -191,14 +191,13 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 	struct mbuf *mbuf;
 	int nr_iov = 0;
 	int len;
-
 	while (off < budget) {
 		mbuf = mbuf_alloc(thread->mbuf_pool);
 		assert(mbuf != NULL);
 
 		mbuf->private = conn_get(conn);
 
-		len = MIN(budget - off, MBUF_SIZE) - BATCH_SIZE;
+		len = MIN(budget - off, MBUF_SIZE);
 		// set buff to some random value
 		memset(mbuf->data, 0x9f, len);
 
@@ -208,7 +207,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		iov[nr_iov].iov_write_done = zwrite_done;
 		iov[nr_iov].iov_param = mbuf;
 
-		if (conn->integrity_enabled)
+		if (0)
 			integrity_fill(mbuf->data, len, conn->integrity_off + conn->stats.bytes_write + off);
 
 		nr_iov += 1;
