@@ -83,8 +83,9 @@ int parse_options(int argc, char **argv)
 	ctx.integrity_enabled = 0;
 	ctx.response_size = ctx.message_size;
 	ctx.func = 0;
-
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:isqh")) != -1) {
+	ctx.mul_pkt_req = 0;
+	
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:isqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -155,6 +156,10 @@ int parse_options(int argc, char **argv)
 		      PARSE_NUM(ctx.func, optarg, NUM_TYPE_SIZE, "function");
 		      break;
 
+		case 'X':
+		      PARSE_NUM(ctx.mul_pkt_req, optarg, NUM_TYPE_NONE, "Multi Packet Request");
+		      break;
+		      
 		case 'q':
 			ctx.quiet = 1;
 			break;

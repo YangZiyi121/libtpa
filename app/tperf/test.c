@@ -85,7 +85,7 @@ static void on_rr_read_done(struct connection *conn)
 			conn->to_close = 1;
 		}
 		else if(conn->test == TEST_RR){
-		  conn->write.budget = conn->message_size - 64;
+		  conn->write.budget = conn->message_size;
 		  event_queue_add(conn, TPA_EVENT_OUT);
 		}
 
@@ -148,7 +148,7 @@ int conn_on_read(struct connection *conn)
 static int emit_test_info(struct connection *conn)
 {
 	struct test_info *info = &conn->info;
-	int ret;
+	//int ret;
 
 	if (conn->info_off == sizeof(struct test_info))
 		return 0;
@@ -161,16 +161,16 @@ static int emit_test_info(struct connection *conn)
 	info->response_size = conn->response_size;
 	info->func = conn->func;
 
-	ret = tpa_write(conn->sid, info, sizeof(*info));
-	if (ret != sizeof(*info)) {
-		if (ret == -1 && errno == EAGAIN)
-			return 0;
+	/* ret = tpa_write(conn->sid, info, sizeof(*info)); */
+	/* if (ret != sizeof(*info)) { */
+	/* 	if (ret == -1 && errno == EAGAIN) */
+	/* 		return 0; */
 
-		fprintf(stderr, "err_emit_test_info: %s\n", strerror(errno));
-		return -1;
-	}
+	/* 	fprintf(stderr, "err_emit_test_info: %s\n", strerror(errno)); */
+	/* 	return -1; */
+	/* } */
 
-	conn->info_off = sizeof(struct test_info);
+	//conn->info_off = sizeof(struct test_info);
 
 	return 0;
 }
@@ -199,7 +199,9 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 		len = MIN(budget - off, MBUF_SIZE);
 		// set buff to some random value
-		memset(mbuf->data, 0x9f, len);
+
+		memcpy(mbuf->data, conn->info, sizeof(*info))
+		memset(mbuf->data + sizeof(*info), 0x9f, len);
 
 		iov[nr_iov].iov_base = mbuf->data;
 		iov[nr_iov].iov_len  = len;

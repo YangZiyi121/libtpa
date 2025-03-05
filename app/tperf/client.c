@@ -23,6 +23,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->message_size = message_size;
 	conn->response_size = response_size;
 	conn->func = ctx.func;
+	conn->mul_pkt_req = ctx.mul_pkt_req;
 
 	switch (conn->test) {
 	case TEST_READ:
@@ -39,7 +40,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
 		conn->read.budget  = response_size;
-		conn->write.budget = message_size - 64;
+		conn->write.budget = message_size;
 		break;
 
 	case TEST_RW:
