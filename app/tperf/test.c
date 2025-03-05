@@ -79,9 +79,8 @@ static void on_rr_read_done(struct connection *conn)
 
 	/* we got the respose: the request is done */
 	if (conn->is_client) {
-	        assert((conn->read.off) == (conn->read.budget - 64));
+	        assert((conn->read.off) == (conn->read.budget));
 	        update_latency(conn);
-
 		if (conn->test == TEST_CRR){
 			conn->to_close = 1;
 		}
@@ -99,9 +98,8 @@ static void on_rr_read_done(struct connection *conn)
 	 *   let's start another request.
 	 */
 	if (!conn->is_client) {
-	        assert((conn->read.off) == (conn->read.budget));
-		printf("response size on server %d func: %d\n",conn->response_size, conn->func);
-	        conn->write.budget = conn->message_size - 64;
+	        assert(conn->read.off == conn->read.budget);
+	        conn->write.budget = conn->response_size;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
 
@@ -110,10 +108,8 @@ static void on_rr_read_done(struct connection *conn)
 
 static void on_read_done(struct connection *conn)
 {
-        // disable any checks on the response size
-        // if (conn->read.off < conn->read.budget)
-        //		return;
-
+        if (conn->read.off < conn->read.budget)
+        		return;
 
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR)) {
 		on_rr_read_done(conn);
@@ -140,7 +136,6 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
-
 		bytes_eaten = read_test_info(conn, iov, bytes_read);
 		read_test_data(conn, iov, bytes_read, bytes_eaten);
 
@@ -166,7 +161,6 @@ static int emit_test_info(struct connection *conn)
 	info->response_size = conn->response_size;
 	info->func = conn->func;
 
-	printf("client emoit response size %d\n",info->response_size);
 	ret = tpa_write(conn->sid, info, sizeof(*info));
 	if (ret != sizeof(*info)) {
 		if (ret == -1 && errno == EAGAIN)
@@ -234,7 +228,7 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	assert(conn->write.off == conn->write.budget);
 
 	/* disable futher writes unless we get the response */
-	if (conn->test == TEST_RR || conn->test == TEST_CRR)
+	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
 
 	conn->write.off = 0;
@@ -249,7 +243,6 @@ int conn_on_write(struct connection *conn)
 
 	if (ctx.is_client && emit_test_info(conn) < 0)
 		return -1;
-
 	while (conn->write.budget) {
 		struct tpa_iovec iov[conn->write.budget / MBUF_SIZE + 1];
 
@@ -260,6 +253,7 @@ int conn_on_write(struct connection *conn)
 
 		nr_iov = setup_test_data(thread, conn, iov);
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
+
 		if (bytes_write < 0) {
 			int err = errno;
 
