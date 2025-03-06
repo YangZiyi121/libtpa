@@ -19,7 +19,7 @@
 #define PKT_MAX_HDR_LEN			128
 
 #define BATCH_SIZE			64
-#define TXQ_BUF_SIZE			4096
+#define TXQ_BUF_SIZE			9216
 
 #define DEV_RXQ_SIZE			NR_RX_DESC
 #define DEV_RXQ_MASK			(DEV_RXQ_SIZE - 1)

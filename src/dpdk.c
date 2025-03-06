@@ -364,16 +364,15 @@ static int get_max_rx_pkt_len(void)
 static void mbuf_mempool_init(void)
 {
 	int mbuf_size;
-	int mbuf_size_int;
 	int ret;
 
 	set_preferred_num();
 	max_rx_pkt_len = get_max_rx_pkt_len();
 
 	generic_pkt_pool = rte_malloc(NULL, sizeof(struct packet_pool), 64);
-	mbuf_size_int = RTE_MAX(RTE_MBUF_DEFAULT_DATAROOM, MAX_RX_BUF_SIZE_USER);
-	mbuf_size = RTE_MAX(mbuf_size_int,
-			    max_rx_pkt_len + sizeof(struct rte_mbuf));
+
+	mbuf_size = RTE_MAX(RTE_MBUF_DEFAULT_DATAROOM,
+			    4096 + sizeof(struct rte_mbuf));
 
 	ret = packet_pool_create(generic_pkt_pool, 62.5, mbuf_size + RTE_PKTMBUF_HEADROOM, "mbuf-mempool");
 
