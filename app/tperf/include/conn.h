@@ -53,8 +53,8 @@ struct connection {
 	uint32_t integrity_off;
         uint32_t response_size;
         uint32_t func;
-        uint32_t mul_pkt_req;
-  
+        uint32_t req_size;
+
 	struct {
 		size_t off;
 		size_t budget;

@@ -23,7 +23,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->message_size = message_size;
 	conn->response_size = response_size;
 	conn->func = ctx.func;
-	conn->mul_pkt_req = ctx.mul_pkt_req;
+	conn->req_size = ctx.req_size;
 
 	switch (conn->test) {
 	case TEST_READ:

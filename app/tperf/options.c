@@ -83,8 +83,8 @@ int parse_options(int argc, char **argv)
 	ctx.integrity_enabled = 0;
 	ctx.response_size = ctx.message_size;
 	ctx.func = 0;
-	ctx.mul_pkt_req = 0;
-	
+	ctx.req_size = ctx.message_size;
+
 	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:isqh")) != -1) {
 		switch (opt) {
 		case 's':
@@ -157,9 +157,9 @@ int parse_options(int argc, char **argv)
 		      break;
 
 		case 'X':
-		      PARSE_NUM(ctx.mul_pkt_req, optarg, NUM_TYPE_NONE, "Multi Packet Request");
+		      PARSE_NUM(ctx.req_size, optarg, NUM_TYPE_SIZE, "Multi Packet Request");
 		      break;
-		      
+
 		case 'q':
 			ctx.quiet = 1;
 			break;

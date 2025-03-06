@@ -73,8 +73,8 @@ struct ctx {
 	int quiet;
         int response_size;
         int func;
-        int mul_pkt_req;
-  
+        int req_size;
+
 	struct test_thread *threads;
 	struct thread_stats *stats;
 };
