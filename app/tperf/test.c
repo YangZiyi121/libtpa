@@ -17,7 +17,6 @@ static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int si
 	/* if already parsed? */
 	// if (off == sizeof(struct test_info))
 	//	return 0;
-
 	while (off < sizeof(struct test_info)) {
 		len = MIN(iov[idx].iov_len, sizeof(struct test_info) - off);
 		memcpy(&conn->info_raw[off], iov[idx].iov_base, len);
@@ -98,19 +97,24 @@ static void on_rr_read_done(struct connection *conn)
 	 *   let's start another request.
 	 */
 	if (!conn->is_client) {
-	        assert(conn->read.off == conn->read.budget);
-	        conn->write.budget = conn->response_size;
+	  if(conn->read.off < conn->req_size){
+	    conn->pkt_idx += 1;
+	    return;
+	  }
+	        assert(conn->read.off == conn->req_size);
+		conn->pkt_idx = 0;
+		conn->write.budget = conn->response_size;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
-
+	
 	conn->read.off = 0;
 }
 
 static void on_read_done(struct connection *conn)
 {
-        if (conn->read.off < conn->read.budget)
+      if (conn->read.off < conn->read.budget){
         		return;
-
+      }
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR)) {
 		on_rr_read_done(conn);
 	} else {
@@ -136,7 +140,7 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
-		if (!conn->is_client)
+		if (!conn->is_client && conn->pkt_idx == 0)
 		  read_test_info(conn, iov, bytes_read);
 		read_test_data(conn, iov, bytes_read, 0);
 
@@ -255,11 +259,15 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	UPDATE_STATS(conn, bytes_write, bytes_write);
 	conn->write.off += bytes_write;
 
-	if (conn->write.off < conn->req_size){
+	if ((conn->is_client && (conn->write.off < conn->req_size)) || (!conn->is_client && (conn->write.off < conn->write.budget))){
 	  return;
 	}
-	assert(conn->write.off == conn->req_size);
 
+	if (conn->is_client){
+	  assert(conn->write.off == conn->req_size);
+	}else{
+	  assert(conn->write.off == conn->write.budget);
+	}
 	/* disable futher writes unless we get the response */
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
