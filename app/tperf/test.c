@@ -190,7 +190,7 @@ static void zwrite_done(void *iov_base, void *iov_param)
 static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
         int budget = conn->write.budget;
-	size_t off = conn->write.off;
+	size_t off = 0;
 	struct mbuf *mbuf;
 	int nr_iov = 0;
 	int len;
@@ -253,9 +253,10 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	UPDATE_STATS(conn, bytes_write, bytes_write);
 	conn->write.off += bytes_write;
 
-	if (conn->write.off < conn->write.budget)
-		return;
-	assert(conn->write.off == conn->write.budget);
+	if (conn->write.off < conn->req_size){
+	  return;
+	}
+	assert(conn->write.off == conn->req_size);
 
 	/* disable futher writes unless we get the response */
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
@@ -268,18 +269,18 @@ int conn_on_write(struct connection *conn)
 {
 	struct test_thread *thread = conn->thread;
 	int bytes_write;
-	int nr_iov;
+	int nr_iov = 0;
 	int i;
 
 	while (conn->write.budget) {
-		struct tpa_iovec iov[conn->write.budget / MBUF_SIZE + 1];
+		struct tpa_iovec iov[1];
 
 		if (mbuf_pool_free_count(thread->mbuf_pool) * MBUF_SIZE < conn->write.budget) {
 			event_queue_add(conn, TPA_EVENT_OUT);
 			break;
 		}
 
-		nr_iov = setup_test_data(thread, conn, iov);
+		nr_iov += setup_test_data(thread, conn, iov);
 
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
 
