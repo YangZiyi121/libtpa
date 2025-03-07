@@ -187,7 +187,7 @@ static void zwrite_done(void *iov_base, void *iov_param)
 	conn_put(conn);
 }
 
-static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
+static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov, int pkt_idx)
 {
         int budget = conn->write.budget;
 	size_t off = 0;
@@ -224,13 +224,15 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		len = MIN(budget - off, MBUF_SIZE);
 		// set buff to some random value
 
-		if(conn->fpga_srv == 1){
-		      memcpy(mbuf->data, fpga_hdr, sizeof(struct test_info));
-		}else{
-		      memcpy(mbuf->data, info, sizeof(struct test_info));
-		}
+		memset(mbuf->data, 0x9f, len);
 
-		memset(mbuf->data + BATCH_SIZE, 0x9f, len - BATCH_SIZE);
+		if (pkt_idx == 0){
+		      if(conn->fpga_srv == 1){
+			    memcpy(mbuf->data, fpga_hdr, sizeof(struct test_info));
+		      }else{
+			    memcpy(mbuf->data, info, sizeof(struct test_info));
+		      }
+		}
 
 		iov[nr_iov].iov_base = mbuf->data;
 		iov[nr_iov].iov_len  = len;
@@ -239,7 +241,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		iov[nr_iov].iov_param = mbuf;
 
 		if (0)
-			integrity_fill(mbuf->data, len, conn->integrity_off + conn->stats.bytes_write + off);
+		      integrity_fill(mbuf->data, len, conn->integrity_off + conn->stats.bytes_write + off);
 
 		nr_iov += 1;
 		off += len;
@@ -280,7 +282,7 @@ int conn_on_write(struct connection *conn)
 			break;
 		}
 
-		nr_iov += setup_test_data(thread, conn, iov);
+		nr_iov += setup_test_data(thread, conn, iov, nr_iov);
 
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
 
