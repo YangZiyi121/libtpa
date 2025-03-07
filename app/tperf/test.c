@@ -189,7 +189,7 @@ static void zwrite_done(void *iov_base, void *iov_param)
 
 static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
-        int budget = conn->req_size;
+        int budget = conn->write.budget;
 	size_t off = conn->write.off;
 	struct mbuf *mbuf;
 	int nr_iov = 0;
@@ -205,7 +205,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 	info->response_size = conn->response_size;
 	info->func = conn->func;
 
-	uint32_t request_size = 1024;
+	uint32_t request_size = conn->req_size;
         uint8_t fpga_hdr[64];
 	uint16_t func = (uint16_t)conn->func;
 
