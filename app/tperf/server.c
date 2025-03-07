@@ -20,7 +20,8 @@ void init_server_conn(struct connection *conn)
 	conn->response_size = response_size;
 	conn->func = conn->info.func;
 	conn->req_size = conn->info.req_size;
-
+	conn->pkt_idx = 0;
+	
 	switch (conn->test) {
 	case TEST_READ:
 		conn->read.budget  = 0;

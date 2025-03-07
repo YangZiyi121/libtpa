@@ -56,7 +56,8 @@ struct connection {
         uint32_t func;
         uint32_t req_size;
         uint8_t fpga_srv;
-
+        uint32_t pkt_idx;
+  
 	struct {
 		size_t off;
 		size_t budget;

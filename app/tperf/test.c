@@ -187,7 +187,7 @@ static void zwrite_done(void *iov_base, void *iov_param)
 	conn_put(conn);
 }
 
-static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov, int pkt_idx)
+static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
         int budget = conn->write.budget;
 	size_t off = 0;
@@ -226,7 +226,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 		memset(mbuf->data, 0x9f, len);
 
-		if (pkt_idx == 0){
+		if (conn->pkt_idx == 0){
 		      if(conn->fpga_srv == 1){
 			    memcpy(mbuf->data, fpga_hdr, sizeof(struct test_info));
 		      }else{
@@ -264,6 +264,7 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
 
+	conn->pkt_idx = 0;
 	conn->write.off = 0;
 }
 
@@ -282,9 +283,9 @@ int conn_on_write(struct connection *conn)
 			break;
 		}
 
-		nr_iov += setup_test_data(thread, conn, iov, nr_iov);
-
+		nr_iov += setup_test_data(thread, conn, iov);
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
+		conn->pkt_idx += 1;
 
 		if (bytes_write < 0) {
 			int err = errno;
