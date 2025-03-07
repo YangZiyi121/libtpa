@@ -19,6 +19,7 @@ void init_server_conn(struct connection *conn)
 	conn->message_size = message_size;
 	conn->response_size = response_size;
 	conn->func = conn->info.func;
+	conn->req_size = conn->info.req_size;
 
 	switch (conn->test) {
 	case TEST_READ:

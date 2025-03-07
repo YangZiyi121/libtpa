@@ -74,6 +74,7 @@ struct ctx {
         int response_size;
         int func;
         int req_size;
+        uint8_t fpga_srv;
 
 	struct test_thread *threads;
 	struct thread_stats *stats;

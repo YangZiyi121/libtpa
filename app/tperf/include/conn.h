@@ -22,6 +22,7 @@ struct test_info {
 	uint32_t integrity_off;
         uint32_t response_size;
         uint32_t func;
+        uint32_t req_size;
 } __attribute__((__aligned__(64)));
 
 struct latency {
@@ -54,6 +55,7 @@ struct connection {
         uint32_t response_size;
         uint32_t func;
         uint32_t req_size;
+        uint8_t fpga_srv;
 
 	struct {
 		size_t off;
