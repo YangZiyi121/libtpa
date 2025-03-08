@@ -21,8 +21,11 @@ static void process_conn(struct connection *conn)
 	if (ret >= 0 && (events & (TPA_EVENT_OUT | TPA_EVENT_ERR | TPA_EVENT_HUP)))
 		ret = conn_on_write(conn);
 
-	if (ret < 0 || (events & (TPA_EVENT_ERR | TPA_EVENT_HUP)) || conn->to_close)
-		conn_close(conn);
+	if (ret < 0 || (events & (TPA_EVENT_ERR | TPA_EVENT_HUP)) || conn->to_close){
+	      if (!conn->is_client && conn->reassemble.reassembly_buf != NULL)
+		    free(conn->reassemble.reassembly_buf);
+	      conn_close(conn);
+	}
 }
 
 static void process_event_queue(struct test_thread *thread)

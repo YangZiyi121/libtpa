@@ -57,7 +57,12 @@ struct connection {
         uint32_t req_size;
         uint8_t fpga_srv;
         uint32_t pkt_idx;
-  
+
+       struct {
+	     uint8_t *reassembly_buf;
+	     size_t off;
+       } reassemble;
+
 	struct {
 		size_t off;
 		size_t budget;

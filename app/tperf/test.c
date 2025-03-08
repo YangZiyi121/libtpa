@@ -58,7 +58,10 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 			len -= bytes_eaten - sum;
 		}
 
-
+		if (!conn->is_client && conn->reassemble.reassembly_buf != NULL && conn->reassemble.off < conn->req_size){
+		      memcpy((conn->reassemble.reassembly_buf + conn->reassemble.off), base, len);
+		      conn->reassemble.off += len;
+		}
 		if (0) // disable integrity check for now
 		      integrity_verify(base, len, conn->integrity_off + conn->stats.bytes_read);
 
@@ -141,8 +144,9 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
-		if (!conn->is_client && conn->pkt_idx == 0)
-		  read_test_info(conn, iov, bytes_read);
+		if (!conn->is_client && conn->pkt_idx == 0) {
+		      read_test_info(conn, iov, bytes_read);
+		}
 		read_test_data(conn, iov, bytes_read, 0);
 
 		on_read_done(conn);
@@ -190,6 +194,38 @@ static void zwrite_done(void *iov_base, void *iov_param)
 
 	mbuf_put(mbuf);
 	conn_put(conn);
+}
+
+static int offrac_process(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
+{
+	struct mbuf *mbuf;
+	int len;
+	int nr_iov = 0;
+
+	mbuf = mbuf_alloc(thread->mbuf_pool);
+	assert(mbuf != NULL);
+
+	mbuf->private = conn_get(conn);
+
+	len = MIN(conn->write.budget, MBUF_SIZE);
+	// set buff to some random value
+
+	if (conn->func == TOPK){
+	      len = topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	} /* else if (conn->func == LOGIT){ */
+	/*       len = logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf); */
+	/* } else if (conn->func == NORM){ */
+	/*       len = norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf); */
+	/* } */
+
+
+	iov[nr_iov].iov_base = mbuf->data;
+	iov[nr_iov].iov_len  = len;
+	iov[nr_iov].iov_phys = conn->enable_zwrite;
+	iov[nr_iov].iov_write_done = zwrite_done;
+	iov[nr_iov].iov_param = mbuf;
+
+	return nr_iov;
 }
 
 static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
@@ -293,7 +329,12 @@ int conn_on_write(struct connection *conn)
 			break;
 		}
 
-		nr_iov += setup_test_data(thread, conn, iov);
+		if (conn->is_client) {
+		      nr_iov += setup_test_data(thread, conn, iov);
+		} else {
+		      nr_iov = offrac_process(thread, conn, iov);
+		}
+
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
 		conn->pkt_idx += 1;
 

@@ -9,25 +9,24 @@
 #include <math.h>
 #include <float.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define MAX_BUF_SIZE 20480
 
 // Enum for offrac supporting functions
-typedef enum {
-    TOPK = 1,
-    MINMAX,
-    LOGIT
-} offrac_func_t;
+enum {
+      TOPK = 1,
+      CNN = 2,
+      LOGIT = 3,
+      NORM = 5,
+};
 
-// Offrac request handlers
-typedef int (*offrac_func_ptr)(uint32_t *buf, int size, int offrac_size, int offrac_args);
+//static int offrac_process(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov);
 
-int offrac_topk(uint32_t *buf, int size, int offrac_size, int offrac_args);
-int offrac_minmax(uint32_t *buf, int size, int offrac_size, int offrac_args);
-int offrac_logit(uint32_t *buf, int size, int offrac_size, int offrac_args);
+int topk(uint32_t *buf, int req_size, void* in_buf);
+/* offrac_resp_t* offrac_minmax(uint32_t *buf, int size, int offrac_size, int offrac_args); */
+/* offrac_resp_t* offrac_logit(uint32_t *buf, int size, int offrac_size, int offrac_args); */
 
 // Handler interface for offrac functions
-int offrac_process(char *buf, int size, offrac_func_t offrac_func, int offrac_size, int offrac_args);
-void offrac_down(void);
 
 #endif

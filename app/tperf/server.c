@@ -21,7 +21,15 @@ void init_server_conn(struct connection *conn)
 	conn->func = conn->info.func;
 	conn->req_size = conn->info.req_size;
 	conn->pkt_idx = 0;
-	
+
+	conn->reassemble.reassembly_buf = (uint8_t *)malloc(conn->req_size);
+	conn->reassemble.off = 0;
+
+	if (conn->reassemble.reassembly_buf == NULL) {
+	      printf("Reassembly buffer Memory allocation failed!\n");
+	      exit(1);
+	}
+
 	switch (conn->test) {
 	case TEST_READ:
 		conn->read.budget  = 0;
@@ -96,7 +104,6 @@ static void *server_thread_loop(void *arg)
 
 		poll_and_process(thread);
 	}
-
 	return NULL;
 }
 
