@@ -106,7 +106,7 @@ static void on_rr_read_done(struct connection *conn)
 		conn->write.budget = conn->response_size;
 		event_queue_add(conn, TPA_EVENT_OUT);
 	}
-	
+
 	conn->read.off = 0;
 }
 
@@ -272,6 +272,7 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
 
+	conn->last_ns = get_time_in_ns();
 	conn->pkt_idx = 0;
 	conn->write.off = 0;
 }
