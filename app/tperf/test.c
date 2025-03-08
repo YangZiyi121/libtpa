@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "tperf.h"
+#include "offrac.h"
 
 static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int size)
 {

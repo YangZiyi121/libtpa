@@ -13,6 +13,7 @@ SRCS += utils.c
 SRCS += mbuf.c
 SRCS += event.c
 SRCS += stats.c
+SRCS += offrac.c
 
 APP  := tperf
 
