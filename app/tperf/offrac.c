@@ -57,8 +57,9 @@ int norm(void* out_buf , int req_size, void* in_buf) {
 
     // Check if min and max values are the same
     if (min_val == max_val) {
-        fprintf(stderr, "All elements are the same\n");
-        return -1;
+        //fprintf(stderr, "All elements are the same\n");
+        max_val += min_val;
+        //return -1;
     }
 
     // Normalize the elements using min-max normalization
@@ -70,7 +71,7 @@ int norm(void* out_buf , int req_size, void* in_buf) {
 }
 
 int logit(void* out_buf , int req_size, void* in_buf) {
-    float *float_buf = (float *)buf;
+    float *float_buf = (float *)out_buf;
 
     int size = req_size/sizeof(uint32_t);
 
