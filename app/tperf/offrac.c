@@ -15,23 +15,23 @@ int compare_desc(const void *a, const void *b) {
 
 // return the buf size after topk, ideally should be k
 // return -1 if error
-int topk(uint32_t* out_buf , int req_size, void* in_buf) {
+int topk(void* out_buf , int req_size, void* in_buf) {
 
     int k = 16;
-
+    int size = req_size/sizeof(uint32_t);
     // Check if k is valid
-    if (k <= 0 || k > req_size) {
+    uint32_t *buf_u32 = (uint32_t *)out_buf;
+    if (k <= 0 || k > size) {
         fprintf(stderr, "Invalid value of k: %d\n", k);
         return -1;
     }
 
-    memcpy(out_buf, in_buf, req_size * sizeof(uint32_t));
-    // Sort the array in descending order
-    qsort(out_buf, req_size, sizeof(uint32_t), compare_desc);
+    memcpy(out_buf, in_buf, req_size);
 
-    // Set elements after the k-th element to 0
-    for (int i = k; i < req_size; i++) {
-        out_buf[i] = 0;
+    qsort(buf_u32, size, sizeof(uint32_t), compare_desc);
+
+    for (int i = k; i < size; i++) {
+      buf_u32[i] = 0;
     }
 
     return k;
