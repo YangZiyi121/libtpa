@@ -211,12 +211,12 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	// set buff to some random value
 
 	if (conn->func == TOPK){
-	  len = topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} /* else if (conn->func == LOGIT){ */
-	/*       len = logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf); */
-	/* } else if (conn->func == NORM){ */
-	/*       len = norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf); */
-	/* } */
+	      topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	} else if (conn->func == LOGIT){
+	      logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	} else if (conn->func == NORM){
+	      norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	}
 
 	iov[nr_iov].iov_base = mbuf->data;
 	iov[nr_iov].iov_len  = len;

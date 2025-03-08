@@ -37,46 +37,47 @@ int topk(void* out_buf , int req_size, void* in_buf) {
     return k;
 }
 
-// return the buf size after minmax norm, ideally should remains the same
-// return -1 if error
-/* int minmax(uint32_t *buf, int size, int offrac_size, int offrac_args) { */
-/*     float *float_buf = (float *)buf; */
+int norm(void* out_buf , int req_size, void* in_buf) {
+    float *float_buf = (float *)out_buf;
 
-/*     // Find the min and max values */
-/*     float min_val = FLT_MAX; */
-/*     float max_val = -FLT_MAX; */
-/*     for (int i = 0; i < size; i++) { */
-/*         if (float_buf[i] < min_val) { */
-/*             min_val = float_buf[i]; */
-/*         } */
-/*         if (float_buf[i] > max_val) { */
-/*             max_val = float_buf[i]; */
-/*         } */
-/*     } */
+    // Find the min and max values
+    float min_val = FLT_MAX;
+    float max_val = -FLT_MAX;
 
-/*     // Check if min and max values are the same */
-/*     if (min_val == max_val) { */
-/*         fprintf(stderr, "All elements are the same\n"); */
-/*         return -1; */
-/*     } */
+    int size = req_size/sizeof(uint32_t);
 
-/*     // Normalize the elements using min-max normalization */
-/*     for (int i = 0; i < size; i++) { */
-/*         float_buf[i] = (float_buf[i] - min_val) / (max_val - min_val); */
-/*     } */
+    for (int i = 0; i < size; i++) {
+        if (float_buf[i] < min_val) {
+            min_val = float_buf[i];
+        }
+        if (float_buf[i] > max_val) {
+            max_val = float_buf[i];
+        }
+    }
 
-/*     return size; */
-/* } */
+    // Check if min and max values are the same
+    if (min_val == max_val) {
+        fprintf(stderr, "All elements are the same\n");
+        return -1;
+    }
 
-/* // return the buf size after logit transformation, ideally should remains the same */
-/* // return -1 if error */
-/* int logit(uint32_t *buf, int size, int offrac_size, int offrac_args) { */
-/*     float *float_buf = (float *)buf; */
+    // Normalize the elements using min-max normalization
+    for (int i = 0; i < size; i++) {
+        float_buf[i] = (float_buf[i] - min_val) / (max_val - min_val);
+    }
 
-/*     // Apply the logistic function to each element */
-/*     for (int i = 0; i < size; i++) { */
-/*         float_buf[i] = 1.0f / (1.0f + expf(-float_buf[i])); */
-/*     } */
+    return size;
+}
 
-/*     return size; */
-/* } */
+int logit(void* out_buf , int req_size, void* in_buf) {
+    float *float_buf = (float *)buf;
+
+    int size = req_size/sizeof(uint32_t);
+
+    // Apply the logistic function to each element
+    for (int i = 0; i < size; i++) {
+        float_buf[i] = 1.0f / (1.0f + expf(-float_buf[i]));
+    }
+
+    return size;
+}
