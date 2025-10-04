@@ -10,7 +10,7 @@
 
 static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int size)
 {
-        uint32_t off = conn->info_off;
+	uint32_t off = conn->info_off;
 	int bytes_eaten = 0;
 	int idx = 0;
 	int len;
@@ -59,8 +59,12 @@ static void read_test_data(struct connection *conn, struct tpa_iovec *iov,
 		}
 
 		if (!conn->is_client && conn->reassemble.reassembly_buf != NULL && conn->reassemble.off < conn->req_size){
-		      memcpy((conn->reassemble.reassembly_buf + conn->reassemble.off), base, len);
-		      conn->reassemble.off += len;
+		      size_t remaining = conn->req_size - conn->reassemble.off;
+		      size_t to_copy = MIN((size_t)len, remaining);
+		      if (to_copy > 0) {
+		          memcpy(conn->reassemble.reassembly_buf + conn->reassemble.off, base, to_copy);
+		          conn->reassemble.off += to_copy;
+		      }
 		}
 		if (0) // disable integrity check for now
 		      integrity_verify(base, len, conn->integrity_off + conn->stats.bytes_read);
@@ -82,6 +86,10 @@ static void on_rr_read_done(struct connection *conn)
 
 	/* we got the respose: the request is done */
 	if (conn->is_client) {
+	        if ((conn->read.off) != (conn->read.budget)) {
+	            fprintf(stderr, "Client assertion failed: read.off=%lu, read.budget=%lu, diff=%ld, thread_id=%d\n", 
+	                    conn->read.off, conn->read.budget, (long)(conn->read.off - conn->read.budget), conn->thread->id);
+	        }
 	        assert((conn->read.off) == (conn->read.budget));
 	        update_latency(conn);
 		if (conn->test == TEST_CRR){
@@ -105,7 +113,8 @@ static void on_rr_read_done(struct connection *conn)
 	    conn->pkt_idx += 1;
 	    return;
 	  }
-	        assert(conn->read.off == conn->req_size);
+		assert(conn->read.off == conn->req_size);
+		conn->reassemble.off = 0;
 		conn->pkt_idx = 0;
 		conn->write.budget = conn->response_size;
 		event_queue_add(conn, TPA_EVENT_OUT);
@@ -131,10 +140,10 @@ int conn_on_read(struct connection *conn)
 {
 	struct tpa_iovec iov[BATCH_SIZE];
 	int bytes_read;
-	//int bytes_eaten;
+	int bytes_eaten;
 
 	while (1) {
-		bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
+        bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
 		if (bytes_read < 0) {
 			if (errno == EAGAIN)
 				break;
@@ -144,10 +153,11 @@ int conn_on_read(struct connection *conn)
 
 		if (bytes_read == 0)
 			return -1;
+		bytes_eaten = 0;
 		if (!conn->is_client && conn->pkt_idx == 0) {
-		      read_test_info(conn, iov, bytes_read);
+		      bytes_eaten = read_test_info(conn, iov, bytes_read);
 		}
-		read_test_data(conn, iov, bytes_read, 0);
+		read_test_data(conn, iov, bytes_read, bytes_eaten);
 
 		on_read_done(conn);
 	}
@@ -178,14 +188,18 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	len = MIN(conn->write.budget, MBUF_SIZE);
 	// set buff to some random value
 
-	if (conn->func == TOPK){
-	      topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	if (conn->func == SPARSE_TRANSFER){
+	      //fprintf(stderr, "[tperf] server invoking SPARSE_TRANSFER (func=0x%x)\n", conn->func);
+	      sparse_transfer(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
 	} else if (conn->func == LOGIT){
 	      logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
 	} else if (conn->func == NORM){
 	      norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} else if (conn->func == CNN){
-	  cnn(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf, &conn->tf_obj);
+	} else if (conn->func == MAPID){
+	      mapid(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	} else if (conn->func == TOPK){
+		 //fprintf(stderr, "[tperf] server invoking TOPK (func=0x%x)\n", conn->func);
+	      topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
 	}
 
 	iov[nr_iov].iov_base = mbuf->data;
@@ -200,7 +214,7 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 
 static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
-        int budget = conn->write.budget;
+    int budget = conn->write.budget;
 	size_t off = 0;
 	struct mbuf *mbuf;
 	int nr_iov = 0;
@@ -220,10 +234,11 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 	if (conn->fpga_srv == 1){
 	      uint32_t request_size = conn->req_size;
-	      uint16_t func = (uint16_t)conn->func;
+	      uint32_t func_header = 0xfff0 | (conn->func & 0xf); // Create "fffX" format
+	      //printf("Function header: 0x%x (func=%d)\n", func_header, conn->func);
 	      memset(fpga_hdr, 0xff, 64);
-	      memcpy(&fpga_hdr[62], &func, sizeof(uint16_t)); // Bytes 62–63
-	      memcpy(&fpga_hdr[56], &request_size, sizeof(uint32_t)); // Bytes 57–60
+	      memcpy(&fpga_hdr[62], &func_header, sizeof(uint16_t)); // Bytes 62–63
+	      memcpy(&fpga_hdr[56], &request_size, sizeof(uint32_t)); // Bytes 56–59
 	}
 
 	while (off < budget) {
@@ -233,9 +248,21 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		mbuf->private = conn_get(conn);
 
 		len = MIN(budget - off, MBUF_SIZE);
-		// set buff to some random value
 
-		memset(mbuf->data, 0x9f, len);
+		//original payload
+		memset(mbuf->data, 0x32, len);
+		//Initialize buffer with repeating pattern 0, 1, 2, 3 (as 32-bit integers)
+		// uint32_t *int_data = (uint32_t *)mbuf->data;
+		// int num_ints = len / sizeof(uint32_t);
+		// for (int j = 0; j < num_ints; j++) {
+		// 	int_data[j] = j % 4;  // 0, 1, 2, 3, 0, 1, 2, 3...
+		// }
+		
+		// Handle remaining bytes if len is not divisible by 4
+		// uint8_t *byte_data = (uint8_t *)mbuf->data;
+		// for (int j = num_ints * sizeof(uint32_t); j < len; j++) {
+		// 	byte_data[j] = (j / sizeof(uint32_t)) % 4;
+		// }
 
 		if (conn->pkt_idx == 0){
 		      if(conn->fpga_srv == 1){
@@ -244,6 +271,20 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 			    memcpy(mbuf->data, info, sizeof(struct test_info));
 		      }
 		}
+
+		// {
+		// 	size_t payload_off = (conn->pkt_idx == 0) ? sizeof(struct test_info) : 0;
+		// 	if (payload_off < (size_t)len) {
+		// 		uint8_t *byte_data = (uint8_t *)mbuf->data;
+		// 		const uint8_t pattern[4] = {0x25, 0xC8, 0x3C, 0x98};
+		// 		size_t j;
+		// 		size_t k = 0;
+		// 		for (j = payload_off; j < (size_t)len; j++) {
+		// 			byte_data[j] = pattern[k];
+		// 			k = (k + 1) % 4;
+		// 		}
+		// 	}
+		// }
 
 		iov[nr_iov].iov_base = mbuf->data;
 		iov[nr_iov].iov_len  = len;
@@ -266,15 +307,10 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	UPDATE_STATS(conn, bytes_write, bytes_write);
 	conn->write.off += bytes_write;
 
-	if ((conn->is_client && (conn->write.off < conn->req_size)) || (!conn->is_client && (conn->write.off < conn->write.budget))){
-	  return;
-	}
+    if (conn->write.off < conn->write.budget)
+      return;
 
-	if (conn->is_client){
-	  assert(conn->write.off == conn->req_size);
-	}else{
-	  assert(conn->write.off == conn->write.budget);
-	}
+    assert(conn->write.off == conn->write.budget);
 	/* disable futher writes unless we get the response */
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;

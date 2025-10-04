@@ -52,7 +52,8 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
 		conn->read.budget  = response_size;
-		conn->write.budget = message_size;
+		/* Send payload of req_size plus the 64-byte test_info header */
+		conn->write.budget = conn->req_size + sizeof(struct test_info);
 		break;
 
 	case TEST_RW:

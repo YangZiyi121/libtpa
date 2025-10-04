@@ -6,7 +6,7 @@ MAKEFLAGS += --no-print-directory
 
 export TPA_VERSION   = 1.0-rc0
 export BUILD_MODE   ?= release
-export DPDK_VERSION ?= v20.11.3
+export DPDK_VERSION ?= v22.11
 export NIC_TYPE     ?= mlnx
 
 include buildtools/vars.mk

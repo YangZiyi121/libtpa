@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "tperf.h"
+#include "offrac.h"
 
 void init_server_conn(struct connection *conn)
 {
@@ -41,6 +42,11 @@ void init_server_conn(struct connection *conn)
 	  conn->tf_obj.output_op.index = 0;
 
 	}
+
+	if (conn->func == MAPID){
+		// Initialize the idmap from COE file
+		idmap_init_from_coe_once();
+	}	
 
 
 	if (conn->reassemble.reassembly_buf == NULL) {
