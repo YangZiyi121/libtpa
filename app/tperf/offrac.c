@@ -15,9 +15,9 @@
 // Global variables for mapid functionality
 uint16_t *g_idmap = NULL;
 int g_idmap_loaded = 0;
-int mapid_printed_once = 0;
-int logit_printed_once = 0;
-int topk_printed_once = 0;
+int mapid_printed_once = 1;
+int logit_printed_once = 1;
+int topk_printed_once = 1;
 
 static void hexdump(const uint8_t *buf, int len)
 {

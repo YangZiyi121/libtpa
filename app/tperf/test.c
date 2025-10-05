@@ -306,14 +306,31 @@ static void on_write_done(struct connection *conn, int bytes_write)
 {
 	UPDATE_STATS(conn, bytes_write, bytes_write);
 	conn->write.off += bytes_write;
+	/* Use Z (fpga_srv) to select CPU vs FPGA completion logic */
+	if (conn->fpga_srv == 1) {
+		/* FPGA */
+		if ((conn->is_client && (conn->write.off < conn->req_size)) ||
+		    (!conn->is_client && (conn->write.off < conn->write.budget))) {
+			return;
+		}
+		if (conn->is_client) {
+			assert(conn->write.off == conn->req_size);
+		} else {
+			assert(conn->write.off == conn->write.budget);
+		}
+	} else {
+		/* CPU */
+		if (conn->write.off < conn->write.budget)
+			return;
 
-    if (conn->write.off < conn->write.budget)
-      return;
+		assert(conn->write.off == conn->write.budget);
+	}
 
-    assert(conn->write.off == conn->write.budget);
+
 	/* disable futher writes unless we get the response */
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
+	
 
 	conn->last_ns = get_time_in_ns();
 	conn->pkt_idx = 0;
