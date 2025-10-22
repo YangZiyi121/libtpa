@@ -48,7 +48,7 @@ struct connection {
 	int refcnt;
 	int to_close;
 	int is_client;
-
+	int req_cpl;
 	int test;
 	int message_size;
 	int enable_zwrite;

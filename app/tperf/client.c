@@ -36,6 +36,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->req_size = ctx.req_size;
 	conn->fpga_srv = ctx.fpga_srv;
 	conn->pkt_idx = 0;
+	conn->req_cpl = 0;
 
 	switch (conn->test) {
 	case TEST_READ:
@@ -52,7 +53,7 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
 		conn->read.budget  = response_size;
-		conn->write.budget = message_size;
+		conn->write.budget = 0;//message_size;
 		break;
 
 	case TEST_RW:
@@ -88,15 +89,34 @@ static void *client_test_loop(void *arg)
 		return NULL;
 	}
 	thread->worker = worker;
+	int send_first_pack = 1;
 
 	while (!client_shutdown) {
 		bootstrap_test(thread);
+
+		struct connection *c;
+
+		TAILQ_FOREACH(c, &thread->conn_list, thread_node) {
+			// Access connection fields here
+			//printf("Connection SID: %d, message_size: %d, req_cpl: %d\n",
+			//	   c->sid, c->message_size, c->req_cpl);
+			if (c->req_cpl == 0 && send_first_pack == 1) {
+				c->write.budget = c->message_size;
+				//event_queue_add(c, TPA_EVENT_OUT);
+				send_first_pack = 0;
+			} else if(c->req_cpl == 1 && send_first_pack == 0) {
+				c->req_cpl = 0;
+				c->write.budget = c->message_size;
+				event_queue_add(c, TPA_EVENT_OUT);
+			}
+		}
 
 		tpa_worker_run(thread->worker);
 
 		if (poll_and_process(thread) < 0)
 			break;
 	}
+exit:
 	printf("exiting client: %d\n", thread->id);
 
 	if (thread->log){
@@ -124,7 +144,17 @@ static void *client_test_loop(void *arg)
 int tperf_client(void)
 {
 	spawn_test_threads(client_test_loop);
-	show_stats();
+
+    struct thread_stats last_stats[ctx.nr_thread];
+    memset(last_stats, 0, sizeof(last_stats));
+
+    int loop = 0;
+
+	while (ctx.duration-- > 0 ) {
+        sleep(1);
+        show_stats_once(loop++, last_stats);
+    }
+	//show_stats();
 
 	client_shutdown = 1;
 

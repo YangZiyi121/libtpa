@@ -138,7 +138,7 @@ uint64_t get_time_in_ns(void);
 void update_latency(struct connection *conn);
 int str_to_test(const char *str);
 void show_stats(void);
-
+void show_stats_once(int loop, struct thread_stats *last_stats);
 /* event.c */
 int poll_and_process(struct test_thread *thread);
 

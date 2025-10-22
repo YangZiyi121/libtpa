@@ -88,8 +88,11 @@ static void on_rr_read_done(struct connection *conn)
 			conn->to_close = 1;
 		}
 		else if(conn->test == TEST_RR){
-		  conn->write.budget = conn->message_size;
-		  event_queue_add(conn, TPA_EVENT_OUT);
+			// indicate the a req is completed
+			conn->write.budget = 0;
+			conn->req_cpl = 1;
+			//conn->write.budget = conn->message_size;
+			//event_queue_add(conn, TPA_EVENT_OUT);
 		}
 
 	}
@@ -203,7 +206,7 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 
 static int setup_test_data(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
-        int budget = conn->write.budget;
+	int budget = conn->write.budget;
 	size_t off = 0;
 	struct mbuf *mbuf;
 	int nr_iov = 0;

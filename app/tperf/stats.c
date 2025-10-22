@@ -203,3 +203,10 @@ void show_stats(void)
 			i, ctx.stats[i].nr_conn_total, ctx.stats[i].nr_zero_io_conn);
 	}
 }
+
+void show_stats_once(int loop, struct thread_stats *last_stats) {
+    if (!ctx.quiet) {
+        do_show_stats(loop, last_stats);
+        memcpy(last_stats, ctx.stats, sizeof(struct thread_stats) * ctx.nr_thread);
+    }
+}

@@ -19,9 +19,9 @@
 // Enum for offrac supporting functions
 enum {
       TOPK = 1,
-      CNN = 2,
-      LOGIT = 3,
-      NORM = 5,
+      CNN = 4,
+      LOGIT = 2,
+      NORM = 3,
 };
 
 #ifdef TF_ENABLED
