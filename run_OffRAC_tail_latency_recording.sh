@@ -6,10 +6,10 @@ BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bi
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(1 1 1 1)           # Varying -F
+F_VALUES=(12 1 1 1)           # Varying -F
 R_VALUES=(1024 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
-N_VALUES=(20 1 1 1)
+N_VALUES=(1 1 1 1)
 
 # Check that arrays have the same length
 if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#N_VALUES[@]} ]; then

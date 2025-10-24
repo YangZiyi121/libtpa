@@ -43,9 +43,21 @@ void init_server_conn(struct connection *conn)
 
 	}
 
-	if (conn->func == MAPID){
-		// Initialize the idmap from COE file
-		idmap_init_from_coe_once();
+	/* Initialize idmap if MAPID is present in chained -F (e.g., 12 includes 2) */
+	{
+		int f = conn->func;
+		int has_mapid = 0;
+		while (f > 0) {
+			if ((f % 10) == MAPID) { /* MAPID has enum value 2 */
+				has_mapid = 1;
+				break;
+			}
+			f /= 10;
+		}
+		if (has_mapid) {
+			/* Initialize the idmap from COE file once */
+			idmap_init_from_coe_once();
+		}
 	}	
 
 

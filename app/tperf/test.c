@@ -8,6 +8,60 @@
 #include "tperf.h"
 #include "offrac.h"
 
+static void hexdump(const uint8_t *data, size_t len)
+{
+    size_t i;
+    for (i = 0; i < len; i++) {
+        if ((i & 0xF) == 0)
+            printf("%04zx: ", i);
+        printf("%02x ", data[i]);
+        if (((i & 0xF) == 0xF) || i + 1 == len)
+            printf("\n");
+    }
+}
+
+static int printed_first_request = 1;
+static size_t first_req_to_print = 1;
+static size_t first_req_printed = 1;
+
+static uint16_t make_fpga_func_header(uint32_t func)
+{
+    char digits[32];
+    int len = snprintf(digits, sizeof(digits), "%u", func);
+    if (len < 0)
+        len = 0;
+
+    /* Use the rightmost up to 4 characters, pad the left with 'F' */
+    int start = len > 4 ? len - 4 : 0;
+    int out_len = len - start;
+    int pad = 4 - out_len;
+
+    uint16_t header = 0;
+    int pos = 0;
+
+    /* left padding with 'F' */
+    for (; pos < pad; pos++)
+        header |= (uint16_t)0xF << ((3 - pos) * 4);
+
+    /* copy digits as hex nibbles */
+    for (int i = 0; i < out_len; i++, pos++) {
+        char c = digits[start + i];
+        uint16_t nibble;
+        if (c >= '0' && c <= '9')
+            nibble = (uint16_t)(c - '0');
+        else if (c >= 'a' && c <= 'f')
+            nibble = (uint16_t)(10 + (c - 'a'));
+        else if (c >= 'A' && c <= 'F')
+            nibble = (uint16_t)(10 + (c - 'A'));
+        else
+            nibble = 0xF; /* fallback */
+
+        header |= nibble << ((3 - pos) * 4);
+    }
+
+    return header;
+}
+
 static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int size)
 {
 	uint32_t off = conn->info_off;
@@ -188,18 +242,78 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	len = MIN(conn->write.budget, MBUF_SIZE);
 	// set buff to some random value
 
-	if (conn->func == SPARSE_TRANSFER){
-	      //fprintf(stderr, "[tperf] server invoking SPARSE_TRANSFER (func=0x%x)\n", conn->func);
-	      sparse_transfer(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} else if (conn->func == LOGIT){
-	      logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} else if (conn->func == NORM){
-	      norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} else if (conn->func == MAPID){
-	      mapid(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-	} else if (conn->func == TOPK){
-		 //fprintf(stderr, "[tperf] server invoking TOPK (func=0x%x)\n", conn->func);
-	      topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+	/*
+	 * Support function chaining for CPU path (Z=0):
+	 * A multi-digit -F value like 12 means apply function 2 first, then 1.
+	 * We interpret digits right-to-left: while (func>0) { apply func%10; func/=10; }
+	 * Single-digit values preserve existing behavior.
+	 */
+	{
+		int func_code = conn->func;
+		/* Fast path: single known function id */
+		if (func_code == SPARSE_TRANSFER || func_code == MAPID ||
+		    func_code == LOGIT || func_code == NORM || func_code == TOPK || func_code == CNN) {
+			if (func_code == SPARSE_TRANSFER) {
+				sparse_transfer(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+			} else if (func_code == MAPID) {
+				mapid(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+			} else if (func_code == LOGIT) {
+				logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+			} else if (func_code == NORM) {
+				norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+			} else if (func_code == TOPK) {
+				topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+			} else {
+				/* CNN unsupported in CPU path here unless initialized elsewhere */
+			}
+		} else {
+			/* Chaining path: ping-pong through two temporary buffers */
+			uint8_t tmp_a[MBUF_SIZE];
+			uint8_t tmp_b[MBUF_SIZE];
+			void *in_ptr = conn->reassemble.reassembly_buf;
+			void *out_ptr = tmp_a;
+			int code = func_code;
+			while (code > 0) {
+				int digit = code % 10; /* rightmost digit first */
+				switch (digit) {
+				case 1: /* SPARSE_TRANSFER */
+					sparse_transfer(out_ptr, conn->req_size, in_ptr);
+					break;
+				case 2: /* MAPID */
+					mapid(out_ptr, conn->req_size, in_ptr);
+					break;
+				case 3: /* LOGIT */
+					logit(out_ptr, conn->req_size, in_ptr);
+					break;
+				case 5: /* NORM */
+					norm(out_ptr, conn->req_size, in_ptr);
+					break;
+				case 6: /* TOPK */
+					topk(out_ptr, conn->req_size, in_ptr);
+					break;
+				case 7: /* CNN (requires TF init elsewhere) */
+					/* Not applied unless properly initialized; skip by copying */
+					memcpy(out_ptr, in_ptr, MIN(conn->req_size, MBUF_SIZE));
+					break;
+				default:
+					/* Unknown step: pass-through */
+					memcpy(out_ptr, in_ptr, MIN(conn->req_size, MBUF_SIZE));
+				}
+
+				/* flip buffers for next stage */
+				if (in_ptr == conn->reassemble.reassembly_buf) {
+					in_ptr = out_ptr;
+					out_ptr = (out_ptr == (void *)tmp_a) ? (void *)tmp_b : (void *)tmp_a;
+				} else {
+					void *prev_out = in_ptr;
+					in_ptr = out_ptr;
+					out_ptr = prev_out;
+				}
+				code /= 10;
+			}
+			/* Final result is in in_ptr after the last swap; copy to mbuf->data */
+			memcpy(mbuf->data, in_ptr, MIN(conn->req_size, MBUF_SIZE));
+		}
 	}
 
 	iov[nr_iov].iov_base = mbuf->data;
@@ -234,7 +348,7 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 	if (conn->fpga_srv == 1){
 	      uint32_t request_size = conn->req_size;
-	      uint32_t func_header = 0xfff0 | (conn->func & 0xf); // Create "fffX" format
+	      uint16_t func_header = make_fpga_func_header(conn->func);
 	      //printf("Function header: 0x%x (func=%d)\n", func_header, conn->func);
 	      memset(fpga_hdr, 0xff, 64);
 	      memcpy(&fpga_hdr[62], &func_header, sizeof(uint16_t)); // Bytes 62–63
@@ -249,8 +363,13 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 
 		len = MIN(budget - off, MBUF_SIZE);
 
-		//original payload
-		memset(mbuf->data, 0x32, len);
+		//original payload: repeating 0x07 0x34 0xB8 0xE8 pattern
+		{
+			static const uint8_t pattern[4] = {0x07, 0x34, 0xB8, 0xE8};
+			uint8_t *byte_data = (uint8_t *)mbuf->data;
+			for (int j = 0; j < len; j++)
+				byte_data[j] = pattern[j & 3];
+		}
 		//Initialize buffer with repeating pattern 0, 1, 2, 3 (as 32-bit integers)
 		// uint32_t *int_data = (uint32_t *)mbuf->data;
 		// int num_ints = len / sizeof(uint32_t);
@@ -270,6 +389,28 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		      }else{
 			    memcpy(mbuf->data, info, sizeof(struct test_info));
 		      }
+		}
+
+		/* Print the first request (header + payload) once, across chunks */
+		if (conn->is_client && !printed_first_request) {
+			if (first_req_printed == 0) {
+				first_req_to_print = (conn->fpga_srv == 1) ? (size_t)conn->message_size
+							    : (size_t)conn->req_size + sizeof(struct test_info);
+				printf("[tperf] First request total=%zu bytes (header=%zu, payload=%zu)\n",
+				       first_req_to_print,
+				       (size_t)sizeof(struct test_info),
+				       (conn->fpga_srv == 1) ? (size_t)(first_req_to_print - 64)
+								   : (size_t)conn->req_size);
+			}
+			size_t remaining = first_req_to_print - first_req_printed;
+			size_t to_dump = remaining < (size_t)len ? remaining : (size_t)len;
+			if (to_dump > 0) {
+				printf("[tperf] Dumping first request chunk: %zu bytes\n", to_dump);
+				hexdump((const uint8_t *)mbuf->data, to_dump);
+				first_req_printed += to_dump;
+				if (first_req_printed >= first_req_to_print)
+					printed_first_request = 1;
+			}
 		}
 
 		// {

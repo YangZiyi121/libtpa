@@ -18,6 +18,7 @@ int g_idmap_loaded = 0;
 int mapid_printed_once = 1;
 int logit_printed_once = 1;
 int topk_printed_once = 1;
+int sparse_printed_once = 1;
 
 static void hexdump(const uint8_t *buf, int len)
 {
@@ -189,6 +190,26 @@ int sparse_transfer(void* out_buf , int req_size, void* in_buf)
     }
 
     free(row_ptr);
+
+    if (!sparse_printed_once) {
+        sparse_printed_once = 1;
+        int total_elements = req_size / (int)sizeof(uint32_t);
+        int out_bytes = total_elements * (int)sizeof(uint32_t);
+        int print_in = req_size > 256 ? 256 : req_size;
+        int print_out = out_bytes > 256 ? 256 : out_bytes;
+        printf("[sparse_transfer] Input size: %d bytes; Required bytes: %d; Padded output bytes: %d\n",
+               req_size, bytes_required, padded_bytes);
+        printf("[sparse_transfer] Rows: %d; NNZ: %d; Required elements: %d; Capacity elements: %d\n",
+               num_rows, nnz, required_written, total_elements);
+        if (print_in > 0) {
+            printf("[sparse_transfer] Input (first %d bytes):\n", print_in);
+            hexdump((const uint8_t *)in_buf, print_in);
+        }
+        if (print_out > 0) {
+            printf("[sparse_transfer] Output (first %d bytes):\n", print_out);
+            hexdump((const uint8_t *)out_buf, print_out);
+        }
+    }
 
     return padded_bytes;
 }
