@@ -94,7 +94,18 @@ struct connection {
 	} write;
 
 	uint64_t last_ns;
+	uint64_t next_send_ns;
 	struct rw_stats stats;
+
+	/* bytes of the 64-byte header already sent on the client side for the current request */
+	size_t header_sent;
+
+	/* CNN-specific handling for large requests (server-side) */
+	struct {
+		size_t copy_limit;        /* bytes we actually buffer/process for CNN */
+		size_t drain_remaining;   /* remaining bytes to drain after response */
+		int draining;            /* 1 if we are draining remainder of CNN payload */
+	} cnn;
 
 	int in_event_queue;
 	uint32_t events;

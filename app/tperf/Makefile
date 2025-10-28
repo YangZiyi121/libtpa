@@ -14,7 +14,16 @@ SRCS += mbuf.c
 SRCS += event.c
 SRCS += stats.c
 SRCS += offrac.c
+SRCS += trace.c
 
 APP  := tperf
 
+TF := true
+TF_LIB_PATH ?= $(HOME)/.anaconda/envs/cnn_offrac/lib/tensorflow
+
 include ../app.mk
+
+# Ensure runtime can find TensorFlow without LD_LIBRARY_PATH
+ifeq ($(TF),true)
+LDFLAGS += -Wl,-rpath,$(TF_LIB_PATH)/lib
+endif

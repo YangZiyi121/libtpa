@@ -99,6 +99,11 @@ void update_latency(struct connection *conn)
 			}
 		}
 	}
+
+	/* In trace mode (-E), print per-request latency directly to console */
+	if (ctx.trace_enabled) {
+		printf("latency_us=%.2f\n", to_us(delta));
+	}
 }
 
 static void show_rw_stats(int loop, struct thread_stats *last_stats)
@@ -205,6 +210,9 @@ void show_stats(void)
 }
 
 void show_stats_once(int loop, struct thread_stats *last_stats) {
+    if (ctx.trace_enabled)
+        return;
+
     if (!ctx.quiet) {
         do_show_stats(loop, last_stats);
         memcpy(last_stats, ctx.stats, sizeof(struct thread_stats) * ctx.nr_thread);

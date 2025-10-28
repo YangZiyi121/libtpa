@@ -13,15 +13,15 @@
 #ifdef TF_ENABLED
 #include <tensorflow/c/c_api.h>
 #endif
-#define MAX_BUF_SIZE 20480
+#define MAX_BUF_SIZE 24576
 #define IMAGE_SIZE (64 * 64 * 3)
 
 // Enum for offrac supporting functions
 enum {
       TOPK = 1,
-      CNN = 4,
-      LOGIT = 2,
-      NORM = 3,
+      CNN = 2,
+      LOGIT = 3,
+      NORM = 4,
 };
 
 #ifdef TF_ENABLED

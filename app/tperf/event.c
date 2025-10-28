@@ -22,8 +22,12 @@ static void process_conn(struct connection *conn)
 		ret = conn_on_write(conn);
 
 	if (ret < 0 || (events & (TPA_EVENT_ERR | TPA_EVENT_HUP)) || conn->to_close){
+	  printf("[%s] closing conn sid=%d: ret=%d events=0x%x to_close=%d\n",
+	         conn->is_client ? "client" : "server", conn->sid, ret, events, conn->to_close);
+	  fflush(stdout);
 	  if (!conn->is_client && conn->reassemble.reassembly_buf != NULL){
 		    free(conn->reassemble.reassembly_buf);
+		    conn->reassemble.reassembly_buf = NULL;
 			#ifdef TF_ENABLED
 		    if(conn->func == CNN){
 		          TF_DeleteSession(conn->tf_obj.session, conn->tf_obj.status);

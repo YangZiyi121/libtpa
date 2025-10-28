@@ -6,7 +6,7 @@ MAKEFLAGS += --no-print-directory
 
 export TPA_VERSION   = 1.0-rc0
 export BUILD_MODE   ?= release
-export DPDK_VERSION ?= v20.11.3
+export DPDK_VERSION ?= v22.11
 export NIC_TYPE     ?= mlnx
 
 include buildtools/vars.mk
@@ -43,14 +43,15 @@ so: $(LIBTPA_SO)
 
 static: src lib
 	$(Q)echo "  AR libtpa.a"
-	$(Q)echo create $(LIBTPA_A)                >  /tmp/tpa.mri
-	$(Q)echo addlib $(OBJ_ROOT)/src/tpa-core.a >> /tmp/tpa.mri
-	$(Q)echo addlib $(OBJ_ROOT)/lib/tpa-lib.a  >> /tmp/tpa.mri
+	$(Q)mkdir -p $(OBJ_ROOT)
+	$(Q)echo create $(LIBTPA_A)                >  $(OBJ_ROOT)/tpa.mri
+	$(Q)echo addlib $(OBJ_ROOT)/src/tpa-core.a >> $(OBJ_ROOT)/tpa.mri
+	$(Q)echo addlib $(OBJ_ROOT)/lib/tpa-lib.a  >> $(OBJ_ROOT)/tpa.mri
 	$(Q)for i in $(DPDK_LD_PATH)/librte_*.a; do \
-		echo addlib $$i			   >> /tmp/tpa.mri; \
+		echo addlib $$i		   >> $(OBJ_ROOT)/tpa.mri; \
 	done
-	$(Q)echo save 				   >> /tmp/tpa.mri
-	$(Q)ar -M < /tmp/tpa.mri
+	$(Q)echo save 			   >> $(OBJ_ROOT)/tpa.mri
+	$(Q)ar -M < $(OBJ_ROOT)/tpa.mri
 	$(Q)bash ./buildtools/gen-pkg-config-file
 
 summary: $(SUBDIRS) static

@@ -14,6 +14,14 @@ int main(int argc, char **argv)
 	parse_options(argc, argv);
 	integrity_init();
 
+    if (ctx.trace_enabled) {
+        int rc = trace_load(ctx.trace_file);
+        if (rc < 0) {
+            fprintf(stderr, "failed to load trace '%s' (%d)\n", ctx.trace_file, rc);
+            return 1;
+        }
+    }
+
 	if (ctx.is_client)
 		return tperf_client();
 

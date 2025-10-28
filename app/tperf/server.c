@@ -12,6 +12,10 @@ void init_server_conn(struct connection *conn)
 	int message_size = conn->info.message_size;
 	int response_size = conn->info.response_size;
 
+	printf("[server] header received: func=%u msg_size=%u req_size=%u resp_size=%u\n",
+	       conn->info.func, conn->info.message_size, conn->info.req_size, conn->info.response_size);
+	fflush(stdout);
+
 	conn->test = conn->info.test;
 	conn->integrity_enabled = conn->info.integrity_enabled;
 	conn->integrity_off = conn->info.integrity_off;
@@ -21,6 +25,12 @@ void init_server_conn(struct connection *conn)
 	conn->func = conn->info.func;
 	conn->req_size = conn->info.req_size;
 	conn->pkt_idx = 0;
+
+	/* Free old reassembly buffer if it exists (for persistent connections) */
+	if (conn->reassemble.reassembly_buf != NULL) {
+		free(conn->reassemble.reassembly_buf);
+		conn->reassemble.reassembly_buf = NULL;
+	}
 
 	conn->reassemble.reassembly_buf = (uint8_t *)malloc(conn->req_size);
 	conn->reassemble.off = 0;
@@ -49,7 +59,7 @@ void init_server_conn(struct connection *conn)
 	      exit(1);
 	}
 
-	switch (conn->test) {
+    switch (conn->test) {
 	case TEST_READ:
 		conn->read.budget  = 0;
 		conn->write.budget = message_size;
@@ -67,11 +77,11 @@ void init_server_conn(struct connection *conn)
 		conn->read.budget  = message_size;
 		break;
 
-	case TEST_RR:
-	case TEST_CRR:
-		conn->read.budget  = message_size;
-		conn->write.budget = 0; /* write only after we got the req */
-		break;
+    case TEST_RR:
+    case TEST_CRR:
+        conn->read.budget  = message_size;
+        conn->write.budget = 0; /* write only after we got the req */
+        break;
 	}
 }
 

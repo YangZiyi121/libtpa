@@ -16,6 +16,7 @@
 
 
 volatile int client_shutdown = 0;
+static int trace_debug = 0;
 
 static struct connection *create_client_conn(struct test_thread *thread, int sid)
 {
@@ -37,6 +38,10 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->fpga_srv = ctx.fpga_srv;
 	conn->pkt_idx = 0;
 	conn->req_cpl = 0;
+	conn->header_sent = 0;
+	conn->cnn.copy_limit = 0;
+	conn->cnn.draining = 0;
+	conn->cnn.drain_remaining = 0;
 
 	switch (conn->test) {
 	case TEST_READ:
@@ -71,10 +76,15 @@ static void bootstrap_test(struct test_thread *thread)
 
 	while (thread->nr_conn < ctx.nr_conn_per_thread) {
 		sid = tpa_connect_to(ctx.server, ctx.port, NULL);
-		if (sid < 0)
+		if (sid < 0) {
+			if (ctx.trace_enabled && trace_debug)
+				printf("debug: connect failed, sid=%d errno=%d\n", sid, errno);
 			break;
+		}
 
 		create_client_conn(thread, sid);
+		if (ctx.trace_enabled && trace_debug)
+			printf("debug: connection created, sid=%d nr_conn=%lu\n", sid, thread->nr_conn);
 	}
 }
 
@@ -91,32 +101,118 @@ static void *client_test_loop(void *arg)
 	thread->worker = worker;
 	int send_first_pack = 1;
 
+	/* initialize per-thread trace cursor */
+	if (ctx.trace_enabled) {
+		size_t len = 0;
+		const struct trace_entry *entries = trace_get_entries(&len);
+		thread->trace_entries = entries;
+		thread->trace_len = len;
+		thread->trace_index = 0;
+		
+		/* Check for debug flag via environment variable */
+		if (getenv("TPERF_TRACE_DEBUG")) {
+			trace_debug = 1;
+		}
+	}
+
 	while (!client_shutdown) {
 		bootstrap_test(thread);
+
+		/* If the connection was dropped before the first send, allow re-kicking */
+		if (ctx.trace_enabled && thread->trace_index < thread->trace_len && thread->nr_conn == 0 && send_first_pack == 0)
+			send_first_pack = 1;
+		
+		tpa_worker_run(thread->worker);
 
 		struct connection *c;
 
 		TAILQ_FOREACH(c, &thread->conn_list, thread_node) {
-			// Access connection fields here
-			//printf("Connection SID: %d, message_size: %d, req_cpl: %d\n",
-			//	   c->sid, c->message_size, c->req_cpl);
-			if (c->req_cpl == 0 && send_first_pack == 1) {
-				c->write.budget = c->message_size;
-				//event_queue_add(c, TPA_EVENT_OUT);
+			if (!ctx.trace_enabled) {
+				if (c->req_cpl == 0 && send_first_pack == 1) {
+					c->write.budget = c->message_size;
+					event_queue_add(c, TPA_EVENT_OUT);
+					send_first_pack = 0;
+				} else if(c->req_cpl == 1 && send_first_pack == 0) {
+					c->req_cpl = 0;
+					c->write.budget = c->message_size;
+					event_queue_add(c, TPA_EVENT_OUT);
+				}
+				continue;
+			}
+
+			/* trace playback mode: send entries sequentially and exit when done */
+			uint64_t now = get_time_in_ns();
+
+            /* First packet: set budget and queue OUT to kick first send */
+			if (send_first_pack == 1 && thread->trace_index < thread->trace_len) {
+				const struct trace_entry *e = &thread->trace_entries[thread->trace_index];
+				c->func = e->func;
+				/* In trace mode: message_size from -m, req/resp from CSV */
+				c->message_size = ctx.message_size;
+				c->req_size = (int)e->req_size;
+				c->response_size = (int)e->resp_size;
+				c->read.budget = c->response_size;
+				c->header_sent = 0;
+				/* write.budget should be req_size; header is included in first mbuf */
+				c->write.budget = c->req_size;
+				/* log send */
+				printf("trace_send func=%u msg_bytes=%d req_bytes=%d resp_bytes=%d sleep_sec=%.6f\n",
+				       e->func, c->message_size, c->req_size, c->response_size, e->sleep_sec);
+				if (trace_debug) {
+					printf("debug: first_send sid=%d write_budget=%zu write_off=%zu req_cpl=%d\n",
+					       c->sid, c->write.budget, c->write.off, c->req_cpl);
+				}
+				fflush(stdout);
+                /* Kick the first send; write path will retry on ENOTCONN if needed */
+                event_queue_add(c, TPA_EVENT_OUT);
 				send_first_pack = 0;
-			} else if(c->req_cpl == 1 && send_first_pack == 0) {
-				c->req_cpl = 0;
-				c->write.budget = c->message_size;
-				event_queue_add(c, TPA_EVENT_OUT);
+				uint64_t delta = (uint64_t)(e->sleep_sec * 1e9);
+				c->next_send_ns = now + delta;
+				thread->trace_index += 1;
+				continue;
+			}
+
+			/* After each response, schedule the next entry when its delay expires */
+            if (c->req_cpl == 1) {
+				if (thread->trace_index >= thread->trace_len) {
+					/* finished all entries */
+					client_shutdown = 1;
+					continue;
+				}
+
+                if (now >= c->next_send_ns) {
+					c->req_cpl = 0;
+					const struct trace_entry *e = &thread->trace_entries[thread->trace_index];
+					c->func = e->func;
+					/* In trace mode: message_size from -m, req/resp from CSV */
+					c->message_size = ctx.message_size;
+					c->req_size = (int)e->req_size;
+					c->response_size = (int)e->resp_size;
+				c->read.budget = c->response_size;
+				c->header_sent = 0;
+				/* write.budget should be req_size; header is included in first mbuf */
+				c->write.budget = c->req_size;
+				/* log send */
+				printf("trace_send func=%u msg_bytes=%d req_bytes=%d resp_bytes=%d sleep_sec=%.6f sid=%d\n",
+				       e->func, c->message_size, c->req_size, c->response_size, e->sleep_sec, c->sid);
+				if (trace_debug) {
+					printf("debug: scheduling send sid=%d write_budget=%zu req_cpl=%d\n",
+					       c->sid, c->write.budget, c->req_cpl);
+				}
+				fflush(stdout);
+                event_queue_add(c, TPA_EVENT_OUT);
+
+					uint64_t delta = (uint64_t)(e->sleep_sec * 1e9);
+					c->next_send_ns = now + delta;
+					thread->trace_index += 1;
+                }
+				/* Don't queue OUT events when waiting for response (write.budget == 0) */
 			}
 		}
-
-		tpa_worker_run(thread->worker);
 
 		if (poll_and_process(thread) < 0)
 			break;
 	}
-exit:
 	printf("exiting client: %d\n", thread->id);
 
 	if (thread->log){
@@ -150,13 +246,21 @@ int tperf_client(void)
 
     int loop = 0;
 
-	while (ctx.duration-- > 0 ) {
-        sleep(1);
-        show_stats_once(loop++, last_stats);
-    }
-	//show_stats();
+	if (!ctx.trace_enabled) {
+		while (ctx.duration-- > 0 ) {
+			sleep(1);
+			show_stats_once(loop++, last_stats);
+		}
+		//show_stats();
 
-	client_shutdown = 1;
+		client_shutdown = 1;
+	} else {
+		/* Trace mode: run until the client thread finishes the CSV */
+		while (!client_shutdown) {
+			sleep(1);
+			/* show_stats_once is a no-op in trace mode */
+		}
+	}
 
 	for (int i = 0; i < ctx.nr_thread; i++)
 	  pthread_join(ctx.tid[i], NULL);

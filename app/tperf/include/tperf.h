@@ -34,6 +34,14 @@ enum {
 	TEST_RW,
 };
 
+/* trace playback entry (from CSV): app(func), sleep_time(sec), request_size, response_size */
+struct trace_entry {
+    uint32_t func;
+    double sleep_sec;
+    uint32_t req_size;
+    uint32_t resp_size;
+};
+
 struct thread_stats {
 	struct rw_stats rw_stats;
 	struct latency latency;
@@ -64,6 +72,11 @@ struct test_thread {
 	uint64_t hugepg_off;
 	uint8_t log;
 	char* log_dir;
+
+	/* trace playback */
+	const struct trace_entry *trace_entries;
+	size_t trace_len;
+	size_t trace_index;
 } __attribute__((__aligned__(64)));
 
 struct ctx {
@@ -87,6 +100,10 @@ struct ctx {
 	uint8_t fpga_srv;
 	uint8_t log;
 	char* log_dir;
+
+	/* trace playback */
+	char *trace_file;
+	int trace_enabled;
 
 	struct test_thread *threads;
 	struct thread_stats *stats;
@@ -132,6 +149,11 @@ static inline struct connection *event_queue_pop(struct test_thread *thread)
 int tperf_client(void);
 int tperf_server(void);
 void init_server_conn(struct connection *conn);
+
+/* trace.c */
+struct trace_entry;
+int trace_load(const char *path);
+const struct trace_entry *trace_get_entries(size_t *len_out);
 
 /* stats.c */
 uint64_t get_time_in_ns(void);

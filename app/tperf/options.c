@@ -36,6 +36,7 @@ void usage(void)
 			"  -R response size  specifies response size expected after execution of function\n"
 			"  -L log latency    logs latency value if set to 0 to the dir mentioned\n"
 			"  -D log dir        stores log files in specified director\n"
+			"  -E trace csv      path to CSV trace file (app,sleep_time,request_size,response_size)\n"
 			"\n"
 			"Server options:\n"
 			"  -s                run in server mode\n"
@@ -93,7 +94,7 @@ int parse_options(int argc, char **argv)
 	ctx.fpga_srv = 0;
 	ctx.log = 0;
 	ctx.log_dir = "";
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:isqh")) != -1) {
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:E:isqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -182,6 +183,11 @@ int parse_options(int argc, char **argv)
 
 		case 'D':
 			ctx.log_dir = strdup(optarg);
+			break;
+
+		case 'E':
+			ctx.trace_file = strdup(optarg);
+			ctx.trace_enabled = 1;
 			break;
 
 		case 'q':
