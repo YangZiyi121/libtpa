@@ -50,6 +50,11 @@ int spawn_test_threads(void *(*func)(void *))
 		exit(1);
 	}
 
+	/* Initialize FPGA barrier if needed */
+	if (ctx.fpga_srv == 1) {
+		pthread_barrier_init(&ctx.fpga_barrier, NULL, ctx.nr_thread);
+	}
+
 	ctx.threads = zmalloc_assert(ctx.nr_thread * sizeof(struct test_thread));
 	ctx.stats = zmalloc_assert(ctx.nr_thread * sizeof(struct thread_stats));
 	ctx.tid = zmalloc_assert(ctx.nr_thread * sizeof(pthread_t));
@@ -63,6 +68,7 @@ int spawn_test_threads(void *(*func)(void *))
 
 		thread->log = ctx.log;
 		thread->log_dir = strdup(ctx.log_dir);
+		thread->nr_client_conn = 0;
 
 		if (thread->log){
 			for (int i=0;i<NUM_LOG_PAGES;i++){
@@ -83,6 +89,8 @@ int spawn_test_threads(void *(*func)(void *))
 
 		TAILQ_INIT(&thread->event_queue);
 		TAILQ_INIT(&thread->conn_list);
+		TAILQ_INIT(&thread->fpga_waiting_requests);
+		TAILQ_INIT(&thread->fpga_waiting_replies);
 
 		ctx.tid[i] = spawn_thread(func, thread, ctx.start_cpu + i);
 	}

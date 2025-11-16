@@ -32,8 +32,11 @@ void usage(void)
 			"  -S start_cpu      specifies the starting cpu to bind\n"
 			"  -Z fpga_server    specifies if server is on CPU or FPGA\n"
 			"  -X request size   specifies request size in case > message size then issues multi pkt req\n"
-			"  -F function       specifies function ID to be exec on the server\n"
-			"  -R response size  specifies response size expected after execution of function\n"
+		"  -F function       specifies function ID to be exec on the server\n"
+		"  -R response size  specifies response size expected after execution of function\n"
+		"  -A addr           bind address for FPGA reply listener (default: 0.0.0.0)\n"
+		"  -B port           base port for FPGA reply listeners (thread i reads port+i)\n"
+			"  -G                enable verbose FPGA reply-listener debug logging\n"
 			"  -L log latency    logs latency value if set to 0 to the dir mentioned\n"
 			"  -D log dir        stores log files in specified director\n"
 			"\n"
@@ -93,7 +96,11 @@ int parse_options(int argc, char **argv)
 	ctx.fpga_srv = 0;
 	ctx.log = 0;
 	ctx.log_dir = "";
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:isqh")) != -1) {
+	ctx.fpga_reply_addr = NULL;
+	ctx.fpga_reply_port = 0;
+	ctx.fpga_debug = 0;
+	ctx.fpga_listeners_ready = 0;
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:A:B:Gisqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -172,6 +179,22 @@ int parse_options(int argc, char **argv)
 		      PARSE_NUM(ctx.fpga_srv, optarg, NUM_TYPE_NONE, "fpga server?");
 		      break;
 
+		case 'A':
+			ctx.fpga_reply_addr = strdup(optarg);
+			break;
+
+		case 'B':
+			PARSE_NUM(ctx.fpga_reply_port, optarg, NUM_TYPE_NONE, "fpga reply port");
+			if (ctx.fpga_reply_port <= 0 || ctx.fpga_reply_port >= 65536) {
+				fprintf(stderr, "invalid fpga reply port: %d: out of range\n", ctx.fpga_reply_port);
+				exit(1);
+			}
+			break;
+
+		case 'G':
+			ctx.fpga_debug = 1;
+			break;
+
 		case 'L':
 			PARSE_NUM(ctx.log, optarg, NUM_TYPE_NONE, "log");
 			if (ctx.log != 0 && ctx.log != 1 ) {
@@ -205,6 +228,21 @@ int parse_options(int argc, char **argv)
 	if (ctx.is_client && ctx.test < 0) {
 		fprintf(stderr, "error: missing mandatory option: -t test\n\n");
 		usage();
+	}
+
+	if (ctx.fpga_srv == 1) {
+		if (ctx.fpga_reply_port == 0)
+			ctx.fpga_reply_port = 3000;
+		if (ctx.fpga_reply_addr == NULL)
+			ctx.fpga_reply_addr = strdup("0.0.0.0");
+
+		long max_port = (long)ctx.fpga_reply_port + ctx.nr_thread - 1;
+		if (max_port >= 65536) {
+			fprintf(stderr,
+				"invalid fpga reply port range: %d-%ld: out of range\n",
+				ctx.fpga_reply_port, max_port);
+			exit(1);
+		}
 	}
 
 	return 0;

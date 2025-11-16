@@ -31,12 +31,38 @@ void conn_close(struct connection *conn)
 {
 	struct test_thread *thread = conn->thread;
 
+	if (conn->in_fpga_waiting_requests) {
+		TAILQ_REMOVE(&thread->fpga_waiting_requests, conn, fpga_queue_node);
+		conn->in_fpga_waiting_requests = 0;
+	}
+
+	if (conn->in_fpga_waiting_replies) {
+		TAILQ_REMOVE(&thread->fpga_waiting_replies, conn, fpga_queue_node);
+		conn->in_fpga_waiting_replies = 0;
+	}
+
+	if (conn->is_fpga_reply) {
+		if (conn->fpga_requester) {
+			conn->fpga_requester->fpga_reply_conn = NULL;
+			conn->fpga_requester->fpga_ready = 0;
+			if (!conn->fpga_requester->to_close)
+				conn->fpga_requester->to_close = 1;
+			conn->fpga_requester = NULL;
+		}
+	} else if (conn->fpga_reply_conn) {
+		conn->fpga_reply_conn->fpga_requester = NULL;
+		conn->fpga_reply_conn->to_close = 1;
+		conn->fpga_reply_conn = NULL;
+	}
+
 	if (conn->stats.bytes_read == 0 && conn->stats.bytes_write == 0)
 		thread->stats->nr_zero_io_conn += 1;
 
 	TAILQ_REMOVE(&thread->conn_list, conn, thread_node);
 	thread->sid_mappings[conn->sid] = NULL;
 	thread->nr_conn -= 1;
+	if (conn->is_client && !conn->is_fpga_reply)
+		thread->nr_client_conn -= 1;
 
 	tpa_event_ctrl(conn->sid, TPA_EVENT_CTRL_DEL, NULL);
 	tpa_close(conn->sid);

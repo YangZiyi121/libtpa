@@ -94,6 +94,16 @@ struct connection {
 	uint64_t last_ns;
 	struct rw_stats stats;
 
+	/* FPGA split-path support */
+	uint8_t fpga_ready;
+	uint8_t is_fpga_reply;
+	uint8_t fpga_warmup_done;
+	uint8_t in_fpga_waiting_requests;
+	uint8_t in_fpga_waiting_replies;
+	struct connection *fpga_reply_conn;
+	struct connection *fpga_requester;
+	TAILQ_ENTRY(connection) fpga_queue_node;
+
 	int in_event_queue;
 	uint32_t events;
 	TAILQ_ENTRY(connection) node;
@@ -109,6 +119,7 @@ struct connection {
 
 TAILQ_HEAD(event_queue, connection);
 TAILQ_HEAD(conn_list, connection);
+TAILQ_HEAD(fpga_queue, connection);
 
 static inline struct connection *conn_get(struct connection *conn)
 {

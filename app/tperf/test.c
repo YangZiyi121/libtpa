@@ -190,11 +190,98 @@ static void on_read_done(struct connection *conn)
 	}
 }
 
+static void fpga_request_consume_bytes(struct connection *request_conn,
+					 size_t len)
+{
+	size_t consumed = 0;
+
+	while (consumed < len) {
+		size_t remaining = len - consumed;
+		size_t need = request_conn->read.budget - request_conn->read.off;
+		size_t take = remaining;
+
+		if (need > 0 && take > need)
+			take = need;
+
+		if (take == 0) {
+			/* unexpected: nothing to consume, avoid tight loop */
+			break;
+		}
+
+		UPDATE_STATS(request_conn, bytes_read, take);
+		request_conn->read.off += take;
+		consumed += take;
+
+		if (request_conn->read.budget > 0 &&
+		    request_conn->read.off == request_conn->read.budget)
+			on_rr_read_done(request_conn);
+	}
+}
+
+static int fpga_reply_on_read(struct connection *conn)
+{
+	struct connection *request = conn->fpga_requester;
+	struct tpa_iovec iov[BATCH_SIZE];
+	int bytes_read;
+	int sum;
+	int i;
+
+	if (!request) {
+		/* not paired yet: drain cautiously */
+		while (1) {
+			bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
+			if (bytes_read < 0) {
+				if (errno == EAGAIN)
+					break;
+				return -1;
+			}
+			if (bytes_read == 0)
+				return -1;
+			sum = 0;
+			i = 0;
+			while (sum < bytes_read) {
+				iov[i].iov_read_done(iov[i].iov_base, iov[i].iov_param);
+				sum += iov[i].iov_len;
+				i++;
+			}
+		}
+		return 0;
+	}
+
+	while (1) {
+		bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
+		if (bytes_read < 0) {
+			if (errno == EAGAIN)
+				break;
+			return -1;
+		}
+		if (bytes_read == 0)
+			return -1;
+
+		sum = 0;
+		i = 0;
+		while (sum < bytes_read) {
+			int len = iov[i].iov_len;
+
+			fpga_request_consume_bytes(request, len);
+
+			iov[i].iov_read_done(iov[i].iov_base, iov[i].iov_param);
+			sum += len;
+			i++;
+		}
+	}
+
+	return 0;
+}
+
 int conn_on_read(struct connection *conn)
 {
 	struct tpa_iovec iov[BATCH_SIZE];
 	int bytes_read;
 	int bytes_eaten;
+
+	if (conn->is_fpga_reply)
+		return fpga_reply_on_read(conn);
 
 	while (1) {
         bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
@@ -472,6 +559,11 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	if ((conn->test == TEST_RR || conn->test == TEST_CRR))
 		conn->write.budget = 0;
 	
+	/* For FPGA: after first request sent, wait for reply connection before next send */
+	if (conn->is_client && conn->fpga_srv == 1 && 
+	    !conn->fpga_reply_conn && conn->fpga_ready) {
+		conn->fpga_ready = 0;
+	}
 
 	conn->last_ns = get_time_in_ns();
 	conn->pkt_idx = 0;
@@ -484,6 +576,11 @@ int conn_on_write(struct connection *conn)
 	int bytes_write;
 	int nr_iov = 0;
 	int i;
+
+	if (conn->is_client && conn->fpga_srv == 1 && !conn->fpga_ready) {
+		event_queue_add(conn, TPA_EVENT_OUT);
+		return 0;
+	}
 
 	while (conn->write.budget) {
 		struct tpa_iovec iov[1];

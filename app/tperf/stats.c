@@ -72,17 +72,21 @@ void update_latency(struct connection *conn)
 	uint64_t now = get_time_in_ns();
 	uint64_t delta = now - conn->last_ns;
 
-	if (delta < latency->min || latency->min == 0)
-		latency->min = delta;
-	if (delta > latency->max)
-		latency->max = delta;
+	/* Skip latency stats during FPGA warmup */
+	if (!conn->fpga_srv || conn->fpga_warmup_done) {
+		if (delta < latency->min || latency->min == 0)
+			latency->min = delta;
+		if (delta > latency->max)
+			latency->max = delta;
 
-	latency->count += 1;
-	latency->sum += delta;
+		latency->count += 1;
+		latency->sum += delta;
+	}
 
 	conn->last_ns = now;
 
-	if (conn->thread->log){
+	/* Skip logging during FPGA warmup */
+	if (conn->thread->log && (!conn->fpga_srv || conn->fpga_warmup_done)){
 		if (conn->thread->curr_hugepg < NUM_LOG_PAGES){
 			if (conn->thread->hugepg_off < HUGEPAGE_SIZE_COMMIT) {
 				//fprintf(stderr, "Out of hugepage memory!\n");
@@ -169,6 +173,21 @@ static void show_rr_rw_stats(int loop, struct thread_stats *last_stats)
 }
 
 
+static void show_fpga_debug(int loop, struct thread_stats *last_stats)
+{
+	uint64_t total = 0;
+	int i;
+
+	printf("%5d FG  replies", loop);
+	for (i = 0; i < ctx.nr_thread; i++) {
+		uint64_t delta = ctx.stats[i].fpga_reply_accepts -
+				 last_stats[i].fpga_reply_accepts;
+		total += delta;
+		printf(" t%d=%llu", i, (unsigned long long)delta);
+	}
+	printf(" total=%llu\n", (unsigned long long)total);
+}
+
 static void do_show_stats(int loop, struct thread_stats *last_stats)
 {
         if (ctx.test == TEST_RR || ctx.test == TEST_CRR)
@@ -176,6 +195,9 @@ static void do_show_stats(int loop, struct thread_stats *last_stats)
 	      show_rr_rw_stats(loop, last_stats);
 	else
 		show_rw_stats(loop, last_stats);
+
+	if (ctx.fpga_srv == 1 && ctx.fpga_debug)
+		show_fpga_debug(loop, last_stats);
 
 	if (ctx.nr_thread > 1)
 		printf("\n");

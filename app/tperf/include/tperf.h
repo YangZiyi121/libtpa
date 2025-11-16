@@ -40,6 +40,7 @@ struct thread_stats {
 
 	uint64_t nr_conn_total;
 	uint64_t nr_zero_io_conn;
+	uint64_t fpga_reply_accepts;
 };
 
 struct test_thread {
@@ -49,7 +50,10 @@ struct test_thread {
 	struct thread_stats *stats;
 
 	uint64_t nr_conn;
+	uint64_t nr_client_conn;
 	struct conn_list conn_list;
+	struct fpga_queue fpga_waiting_requests;
+	struct fpga_queue fpga_waiting_replies;
 
 	struct mbuf_pool *mbuf_pool;
 	struct fifo *stats_fifo;
@@ -87,6 +91,13 @@ struct ctx {
 	uint8_t fpga_srv;
 	uint8_t log;
 	char* log_dir;
+	char *fpga_reply_addr;
+	int fpga_reply_port;
+	int fpga_debug;
+
+	/* Synchronization for FPGA reply listener readiness */
+	volatile int fpga_listeners_ready;
+	pthread_barrier_t fpga_barrier;
 
 	struct test_thread *threads;
 	struct thread_stats *stats;
@@ -125,8 +136,10 @@ static inline struct connection *event_queue_pop(struct test_thread *thread)
 }
 
 #define UPDATE_STATS(conn, field, val)		do {	\
-	(conn)->stats.field += val;			\
-	(conn)->thread->stats->rw_stats.field += val;	\
+	if (!(conn)->fpga_srv || (conn)->fpga_warmup_done) {	\
+		(conn)->stats.field += val;			\
+		(conn)->thread->stats->rw_stats.field += val;	\
+	}							\
 } while (0)
 
 int tperf_client(void);
