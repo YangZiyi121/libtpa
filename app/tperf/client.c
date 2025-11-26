@@ -187,9 +187,15 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 static void bootstrap_test(struct test_thread *thread)
 {
 	int sid;
+	int server_port = ctx.port + thread->id;
+
+	if (server_port <= 0 || server_port >= 65536) {
+		fprintf(stderr, "invalid per-thread server port: %d\n", server_port);
+		return;
+	}
 
 	while (thread->nr_client_conn < ctx.nr_conn_per_thread) {
-		sid = tpa_connect_to(ctx.server, ctx.port, NULL);
+		sid = tpa_connect_to(ctx.server, server_port, NULL);
 		if (sid < 0)
 			break;
 
