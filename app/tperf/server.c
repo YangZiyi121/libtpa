@@ -26,23 +26,6 @@ void init_server_conn(struct connection *conn)
 	conn->reassemble.reassembly_buf = (uint8_t *)malloc(conn->req_size);
 	conn->reassemble.off = 0;
 
-	if (conn->func == CNN){
-	  const char* tags = "serve";
-
-	  conn->tf_obj.graph = TF_NewGraph();
-	  conn->tf_obj.status = TF_NewStatus();
-	  conn->tf_obj.session_opts = TF_NewSessionOptions();
-	  conn->tf_obj.run_options = NULL;
-	  conn->tf_obj.session = TF_LoadSessionFromSavedModel(conn->tf_obj.session_opts, conn->tf_obj.run_options, "/home/balasuk/tcp_bench/libtpa/app/tperf/tf/saved_model", &tags, 1, conn->tf_obj.graph, NULL, conn->tf_obj.status);
-
-	  conn->tf_obj.input_op.oper = TF_GraphOperationByName(conn->tf_obj.graph, "serving_default_input_1");
-	  conn->tf_obj.input_op.index = 0;
-
-	  conn->tf_obj.output_op.oper = TF_GraphOperationByName(conn->tf_obj.graph, "StatefulPartitionedCall");
-	  conn->tf_obj.output_op.index = 0;
-
-	}
-
 	/* Initialize idmap if MAPID is present in chained -F (e.g., 12 includes 2) */
 	{
 		int f = conn->func;
@@ -145,7 +128,6 @@ static void *server_thread_loop(void *arg)
 
 int tperf_server(void)
 {
-        setenv("TF_CPP_MIN_LOG_LEVEL", "3", 1);
 	spawn_test_threads(server_thread_loop);
 
 	while (1)

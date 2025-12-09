@@ -25,12 +25,6 @@ static void process_conn(struct connection *conn)
       if (!conn->is_client && conn->reassemble.reassembly_buf != NULL){
             free(conn->reassemble.reassembly_buf);
             conn->reassemble.reassembly_buf = NULL;
-            if(conn->func == CNN){
-                  TF_DeleteSession(conn->tf_obj.session, conn->tf_obj.status);
-              TF_DeleteSessionOptions(conn->tf_obj.session_opts);
-              TF_DeleteGraph(conn->tf_obj.graph);
-              TF_DeleteStatus(conn->tf_obj.status);
-            }
       }
           conn_close(conn);
     }

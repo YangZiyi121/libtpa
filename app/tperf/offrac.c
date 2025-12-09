@@ -5,7 +5,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "tensorflow/c/c_api.h"
 #include "offrac.h"
 #include "tperf.h"
 #include <stdlib.h>
@@ -115,7 +114,6 @@ void idmap_init_from_coe_once(void) {
     g_idmap_loaded = 1;
 }
 
-void NoOpDeallocator(void* data, size_t a, void* b) {}
 // Comparison function for qsort (descending order)
 int compare_desc(const void *a, const void *b) {
     return (*(uint32_t *)b - *(uint32_t *)a);
@@ -269,47 +267,6 @@ int logit(void* out_buf , int req_size, void* in_buf) {
     }
 
     return size;
-}
-
-int cnn(void* out_buf, int req_size, void* in_buf, cnn_tf *tf_obj){
-
-
-    int64_t input_dims[] = {1, 64, 64, 3};  // (1 image, 64x64, RGB)
-
-    float* input_data = (float*) malloc(IMAGE_SIZE*sizeof(float));
-    if (input_data == NULL) {
-        fprintf(stderr, "Failed to allocate input data\n");
-        return -1;
-    }
-
-    // Copy one image from the buffer
-    uint8_t* input_bytes = (uint8_t*)in_buf;
-    for (int i = 0; i < IMAGE_SIZE; i++) {
-      input_data[i] = (float)input_bytes[i];
-    }
-
-    // Create an input tensor for this single image
-    TF_Tensor* input_tensor = TF_NewTensor(TF_FLOAT, input_dims, 4, input_data, IMAGE_SIZE * sizeof(float), &NoOpDeallocator, NULL);
-
-    // Run inference
-    TF_Tensor* output_tensor = NULL;
-    TF_SessionRun(tf_obj->session, NULL, &tf_obj->input_op, &input_tensor, 1, &tf_obj->output_op, &output_tensor, 1, NULL, 0, NULL, tf_obj->status);
-
-    // Retrieve and print the result for this image
-    void* buff = TF_TensorData(output_tensor);
-    float* offsets = (float*)buff;
-
-    // TODO: update to output
-    memcpy(out_buf, offsets, 10 * sizeof(float));
-
-    // Clean up for this image
-    TF_DeleteTensor(input_tensor);
-    TF_DeleteTensor(output_tensor);
-
-    memcpy(out_buf, buff, 10 * sizeof(float));
-    // Clean up global resources
-
-    return 10 * sizeof(float);
 }
 
 int topk(void* out_buf , int req_size, void* in_buf) {

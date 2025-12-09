@@ -327,7 +327,7 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 		int func_code = conn->func;
 		/* Fast path: single known function id */
 		if (func_code == SPARSE_TRANSFER || func_code == MAPID ||
-		    func_code == LOGIT || func_code == NORM || func_code == TOPK || func_code == CNN) {
+		    func_code == LOGIT || func_code == NORM || func_code == TOPK) {
 			if (func_code == SPARSE_TRANSFER) {
 				sparse_transfer(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
 			} else if (func_code == MAPID) {
@@ -338,8 +338,6 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 				norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
 			} else if (func_code == TOPK) {
 				topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
-			} else {
-				/* CNN unsupported in CPU path here unless initialized elsewhere */
 			}
 		} else {
 			/* Chaining path: ping-pong through two temporary buffers */
@@ -366,8 +364,8 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 				case 6: /* TOPK */
 					topk(out_ptr, conn->req_size, in_ptr);
 					break;
-				case 7: /* CNN (requires TF init elsewhere) */
-					/* Not applied unless properly initialized; skip by copying */
+				case 7: /* CNN removed - no longer supported */
+					/* CNN has been removed; pass-through */
 					memcpy(out_ptr, in_ptr, MIN(conn->req_size, MBUF_SIZE));
 					break;
 				default:

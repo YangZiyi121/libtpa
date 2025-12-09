@@ -4,15 +4,11 @@
 
 PKG_CONFIG = PKG_CONFIG_PATH=$(SRC_ROOT)/build pkg-config
 
-
-CFLAGS += -I$(HOME)/miniconda3/envs/tensorflow_c/tensorflow/
-CFLAGS += -I$(HOME)/miniconda3/envs/tensorflow_c/tensorflow/xla
 CFLAGS += -I$(SRC_ROOT)/include/lib -Iinclude 
 CFLAGS += $(shell $(PKG_CONFIG) --cflags libtpa-internal)
 
 LDFLAGS := $(shell $(PKG_CONFIG) --libs --static libtpa-internal)
-LDFLAGS += -lm
-LDFLAGS += -L$(HOME)/miniconda3/envs/tensorflow_c/tensorflow/lib -ltensorflow -pthread -ldl -lm
+LDFLAGS += -lm -pthread -ldl
 
 OBJ_DIR = $(OBJ_ROOT)/app/$(APP)
 BIN_DIR = $(BIN_ROOT)/app

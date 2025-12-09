@@ -73,7 +73,6 @@ struct connection {
 		size_t budget;
 	} read;
 
-  cnn_tf tf_obj;
 	/*
 	 * Here we use the write.budget to control how much we should
 	 * write each time.
