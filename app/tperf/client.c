@@ -227,7 +227,12 @@ static void accept_fpga_replies(struct test_thread *thread)
 		conn->is_fpga_reply = 1;
 		conn->fpga_srv = ctx.fpga_srv;
 		conn->write.budget = 0;
-		conn->read.budget = 0;
+		/*
+		 * Set read.budget to response_size immediately so that if data
+		 * arrives before pairing, fpga_reply_on_read() can buffer it.
+		 * The pairing will copy this to the request connection.
+		 */
+		conn->read.budget = ctx.response_size;
 
 		fpga_reply_enqueue(thread, conn);
 		fpga_try_pair(thread);

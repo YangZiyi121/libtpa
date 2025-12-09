@@ -227,24 +227,12 @@ static int fpga_reply_on_read(struct connection *conn)
 	int i;
 
 	if (!request) {
-		/* not paired yet: drain cautiously */
-		while (1) {
-			bytes_read = tpa_zreadv(conn->sid, iov, BATCH_SIZE);
-			if (bytes_read < 0) {
-				if (errno == EAGAIN)
-					break;
-				return -1;
-			}
-			if (bytes_read == 0)
-				return -1;
-			sum = 0;
-			i = 0;
-			while (sum < bytes_read) {
-				iov[i].iov_read_done(iov[i].iov_base, iov[i].iov_param);
-				sum += iov[i].iov_len;
-				i++;
-			}
-		}
+		/*
+		 * Not paired yet: do NOT drain data!
+		 * Re-add to event queue so we'll be called again after pairing.
+		 * The data remains in the socket buffer until we're paired.
+		 */
+		event_queue_add(conn, TPA_EVENT_IN);
 		return 0;
 	}
 
