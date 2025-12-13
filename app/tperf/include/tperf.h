@@ -41,6 +41,7 @@ struct thread_stats {
 	uint64_t nr_conn_total;
 	uint64_t nr_zero_io_conn;
 	uint64_t fpga_reply_accepts;
+	uint64_t server_response_conns;
 };
 
 struct test_thread {
@@ -54,6 +55,10 @@ struct test_thread {
 	struct conn_list conn_list;
 	struct fpga_queue fpga_waiting_requests;
 	struct fpga_queue fpga_waiting_replies;
+
+	/* Server-side response connection queues (open-connection mode) */
+	struct server_queue server_waiting_requests;  /* requests waiting for response conn */
+	struct server_queue server_waiting_responses; /* response connections waiting to be paired */
 
 	struct mbuf_pool *mbuf_pool;
 	struct fifo *stats_fifo;
@@ -98,6 +103,11 @@ struct ctx {
 	/* Synchronization for FPGA reply listener readiness */
 	volatile int fpga_listeners_ready;
 	pthread_barrier_t fpga_barrier;
+
+	/* Server-side: address/port to open response connections to (CPU open-connection mode) */
+	char *server_response_addr;
+	int server_response_port;
+	int server_debug;
 
 	struct test_thread *threads;
 	struct thread_stats *stats;
@@ -145,6 +155,16 @@ static inline struct connection *event_queue_pop(struct test_thread *thread)
 int tperf_client(void);
 int tperf_server(void);
 void init_server_conn(struct connection *conn);
+
+/* Server-side response connection helpers */
+void server_request_enqueue(struct test_thread *thread, struct connection *conn);
+void server_response_enqueue(struct test_thread *thread, struct connection *conn);
+void server_try_pair(struct test_thread *thread);
+void server_bind_pair(struct connection *request, struct connection *response);
+
+/* Client-side request/reply pairing helpers (for open-connection mode) */
+void fpga_request_enqueue(struct test_thread *thread, struct connection *conn);
+void fpga_try_pair(struct test_thread *thread);
 
 /* stats.c */
 uint64_t get_time_in_ns(void);

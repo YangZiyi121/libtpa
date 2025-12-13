@@ -103,6 +103,15 @@ struct connection {
 	struct connection *fpga_requester;
 	TAILQ_ENTRY(connection) fpga_queue_node;
 
+	/* Server-side response connection support (FPGA-style for CPU server) */
+	uint8_t is_server_response;         /* This conn is for sending response */
+	uint8_t in_server_waiting_requests;
+	uint8_t in_server_waiting_responses;
+	uint8_t server_response_ready;      /* Response conn established and ready */
+	struct connection *server_response_conn; /* For request conn: the response conn */
+	struct connection *server_request_conn;  /* For response conn: the original request */
+	TAILQ_ENTRY(connection) server_queue_node;
+
 	int in_event_queue;
 	uint32_t events;
 	TAILQ_ENTRY(connection) node;
@@ -119,6 +128,7 @@ struct connection {
 TAILQ_HEAD(event_queue, connection);
 TAILQ_HEAD(conn_list, connection);
 TAILQ_HEAD(fpga_queue, connection);
+TAILQ_HEAD(server_queue, connection);
 
 static inline struct connection *conn_get(struct connection *conn)
 {

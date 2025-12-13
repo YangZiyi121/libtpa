@@ -3,14 +3,14 @@
 # Base command parameters
 
 #BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.106 -p 2888 -d 30 -t rr -Z 1"
-BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.108 -d 30 -t rr -Z 1 -p 2888 -A 172.24.5.50 -B 3000"
+BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scaling = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.108 -d 30 -t rr -Z 1 -p 2888 -A 172.24.5.50 -B 3000 -G"
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(62 1 1 1)           # Varying -F
+F_VALUES=(12 1 1 1)           # Varying -F
 R_VALUES=(1024 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
-N_VALUES=(4 1 1 1)
+N_VALUES=(20 1 1 1)
 
 # Check that arrays have the same length
 if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#N_VALUES[@]} ]; then

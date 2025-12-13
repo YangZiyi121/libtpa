@@ -50,8 +50,8 @@ int spawn_test_threads(void *(*func)(void *))
 		exit(1);
 	}
 
-	/* Initialize FPGA barrier if needed */
-	if (ctx.fpga_srv == 1) {
+	/* Initialize barrier for response listener synchronization (client with -A/-B) */
+	if (ctx.is_client && ctx.fpga_reply_port != 0) {
 		pthread_barrier_init(&ctx.fpga_barrier, NULL, ctx.nr_thread);
 	}
 
@@ -91,6 +91,8 @@ int spawn_test_threads(void *(*func)(void *))
 		TAILQ_INIT(&thread->conn_list);
 		TAILQ_INIT(&thread->fpga_waiting_requests);
 		TAILQ_INIT(&thread->fpga_waiting_replies);
+		TAILQ_INIT(&thread->server_waiting_requests);
+		TAILQ_INIT(&thread->server_waiting_responses);
 
 		ctx.tid[i] = spawn_thread(func, thread, ctx.start_cpu + i);
 	}

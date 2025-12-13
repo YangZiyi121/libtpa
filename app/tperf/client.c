@@ -17,36 +17,35 @@
 
 volatile int client_shutdown = 0;
 
-static void start_fpga_reply_listener(struct test_thread *thread)
+/* Start listener for incoming response connections (used by both FPGA and CPU open-connection mode) */
+static void start_response_listener(struct test_thread *thread)
 {
 	struct tpa_sock_opts opts;
 	int port;
 	int listen_sid;
 
 	memset(&opts, 0, sizeof(opts));
-	/*
-	 * Each thread listens on a dedicated reply port (base + id).  Keep the
-	 * listener bound to the worker that created it so RSS won't redirect all
-	 * replies to thread 0.
-	 */
-	opts.listen_scaling = 0;
 
+	/* Each client thread listens on its own port (base + thread_id).
+	 * Use listen_scaling = 0 to ensure this thread handles accepts directly
+	 * without relying on RSS, which provides deterministic 1:1 mapping. */
+	opts.listen_scaling = 0;
 	port = ctx.fpga_reply_port + thread->id;
 
 	listen_sid = tpa_listen_on(ctx.fpga_reply_addr, port, &opts);
 	if (listen_sid < 0) {
-		fprintf(stderr, "failed to listen for fpga replies on %s:%d: %s\n",
+		fprintf(stderr, "failed to listen for responses on %s:%d: %s\n",
 			ctx.fpga_reply_addr, port, strerror(errno));
 		exit(1);
 	}
 
 	if (ctx.fpga_debug) {
-		printf("[fpga-debug] thread %d binding FPGA reply listener sid=%d to %s:%d (worker slot %d)\n",
-		       thread->id, listen_sid, ctx.fpga_reply_addr, port, thread->id);
+		printf("[client-debug] thread %d listening for responses on %s:%d (sid=%d, scaling=%d)\n",
+		       thread->id, ctx.fpga_reply_addr, port, listen_sid, opts.listen_scaling);
 	}
 }
 
-static void fpga_request_enqueue(struct test_thread *thread, struct connection *conn)
+void fpga_request_enqueue(struct test_thread *thread, struct connection *conn)
 {
 	if (conn->in_fpga_waiting_requests)
 		return;
@@ -106,9 +105,14 @@ static void fpga_bind_pair(struct connection *request,
 	if (!request->fpga_warmup_done) {
 		request->fpga_warmup_done = 1;
 	}
+
+
+	/* Trigger a read on the reply connection in case data arrived before pairing.
+	 * Without this, data that arrived and was deferred would never be processed. */
+	event_queue_add(reply, TPA_EVENT_IN);
 }
 
-static void fpga_try_pair(struct test_thread *thread)
+void fpga_try_pair(struct test_thread *thread)
 {
 	while (!TAILQ_EMPTY(&thread->fpga_waiting_requests) &&
 	       !TAILQ_EMPTY(&thread->fpga_waiting_replies)) {
@@ -138,7 +142,8 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	conn->req_size = ctx.req_size;
 	conn->fpga_srv = ctx.fpga_srv;
 	conn->pkt_idx = 0;
-	conn->fpga_ready = 1;
+	/* For CPU (Z=0), start ready; for FPGA (Z=1), wait for pairing. */
+	conn->fpga_ready = (ctx.fpga_srv == 0);
 	conn->fpga_warmup_done = 0;
 
 	switch (conn->test) {
@@ -174,9 +179,9 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 
 	thread->nr_client_conn += 1;
 
-	if (ctx.fpga_srv == 1 && (conn->test == TEST_RR || conn->test == TEST_CRR)) {
-		/* Mark as ready to send first request, which triggers FPGA connection */
-		conn->fpga_ready = 1;
+	/* If using response listener (-A/-B set), enqueue for pairing with incoming response connections */
+	if (ctx.fpga_reply_port != 0 && (conn->test == TEST_RR || conn->test == TEST_CRR)) {
+		/* For FPGA, pairing sets fpga_ready; CPU stays ready. */
 		fpga_request_enqueue(thread, conn);
 		fpga_try_pair(thread);
 	}
@@ -187,10 +192,19 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 static void bootstrap_test(struct test_thread *thread)
 {
 	int sid;
-	int server_port = ctx.port + thread->id;
+	int server_port;
+
+	/* In open-connection mode, each client thread connects to its own server port
+	 * (base_port + thread_id) to ensure 1:1 mapping with response ports.
+	 * In normal mode, all threads connect to the same port. */
+	if (ctx.fpga_reply_port != 0) {
+		server_port = ctx.port + thread->id;
+	} else {
+		server_port = ctx.port;
+	}
 
 	if (server_port <= 0 || server_port >= 65536) {
-		fprintf(stderr, "invalid per-thread server port: %d\n", server_port);
+		fprintf(stderr, "invalid server port: %d\n", server_port);
 		return;
 	}
 
@@ -203,7 +217,8 @@ static void bootstrap_test(struct test_thread *thread)
 	}
 }
 
-static void accept_fpga_replies(struct test_thread *thread)
+/* Accept incoming response connections (used by both FPGA and CPU open-connection mode) */
+static void accept_response_connections(struct test_thread *thread)
 {
 	int sid[BATCH_SIZE];
 	int nr_sock;
@@ -215,7 +230,7 @@ static void accept_fpga_replies(struct test_thread *thread)
 
 	thread->stats->fpga_reply_accepts += nr_sock;
 	if (ctx.fpga_debug) {
-		printf("[fpga-debug] thread %d accepted %d FPGA reply sockets on port %d (total=%lu)\n",
+		printf("[client-debug] thread %d accepted %d response connections on port %d (total=%lu)\n",
 		       thread->id, nr_sock, ctx.fpga_reply_port + thread->id,
 		       (unsigned long)thread->stats->fpga_reply_accepts);
 	}
@@ -229,10 +244,15 @@ static void accept_fpga_replies(struct test_thread *thread)
 		conn->write.budget = 0;
 		/*
 		 * Set read.budget to response_size immediately so that if data
-		 * arrives before pairing, fpga_reply_on_read() can buffer it.
+		 * arrives before pairing, the read handler can buffer it.
 		 * The pairing will copy this to the request connection.
 		 */
 		conn->read.budget = ctx.response_size;
+
+		if (ctx.fpga_debug) {
+			printf("[client-debug] thread %d: response connection established (sid=%d)\n",
+			       thread->id, sid[i]);
+		}
 
 		fpga_reply_enqueue(thread, conn);
 		fpga_try_pair(thread);
@@ -243,6 +263,8 @@ static void *client_test_loop(void *arg)
 {
 	struct test_thread *thread = arg;
 	struct tpa_worker *worker;
+	/* Enable response listener if -A/-B are specified (for FPGA or CPU open-connection mode) */
+	int use_response_listener = (ctx.fpga_reply_port != 0);
 
 	worker = tpa_worker_init();
 	if (!worker) {
@@ -251,15 +273,12 @@ static void *client_test_loop(void *arg)
 	}
 	thread->worker = worker;
 
-	if (ctx.fpga_srv == 1) {
-		start_fpga_reply_listener(thread);
+	if (use_response_listener) {
+		start_response_listener(thread);
 		
 		/* Wait for all threads to bind their reply listeners before sending requests */
 		pthread_barrier_wait(&ctx.fpga_barrier);
 		
-		if (thread->id == 0 && ctx.fpga_debug) {
-			printf("[fpga-debug] All %d FPGA reply listeners ready, starting requests\n", ctx.nr_thread);
-		}
 	}
 
 	while (!client_shutdown) {
@@ -267,8 +286,8 @@ static void *client_test_loop(void *arg)
 
 		tpa_worker_run(thread->worker);
 
-		if (ctx.fpga_srv == 1)
-			accept_fpga_replies(thread);
+		if (use_response_listener)
+			accept_response_connections(thread);
 
 		if (poll_and_process(thread) < 0)
 			break;
@@ -307,8 +326,8 @@ int tperf_client(void)
 	for (int i = 0; i < ctx.nr_thread; i++)
 	  pthread_join(ctx.tid[i], NULL);
 
-	/* Clean up barrier */
-	if (ctx.fpga_srv == 1) {
+	/* Clean up barrier (used when response listener is enabled) */
+	if (ctx.fpga_reply_port != 0) {
 		pthread_barrier_destroy(&ctx.fpga_barrier);
 	}
 

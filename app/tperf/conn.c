@@ -45,7 +45,10 @@ void conn_close(struct connection *conn)
 		if (conn->fpga_requester) {
 			conn->fpga_requester->fpga_reply_conn = NULL;
 			conn->fpga_requester->fpga_ready = 0;
-			if (!conn->fpga_requester->to_close)
+			/* In CPU open-connection mode (fpga_srv=0), the reply connection closing
+			 * is expected after each response. The request connection should stay
+			 * alive to send more requests. Only close requester in FPGA mode. */
+			if (conn->fpga_srv == 1 && !conn->fpga_requester->to_close)
 				conn->fpga_requester->to_close = 1;
 			conn->fpga_requester = NULL;
 		}

@@ -34,9 +34,9 @@ void usage(void)
 			"  -X request size   specifies request size in case > message size then issues multi pkt req\n"
 		"  -F function       specifies function ID to be exec on the server\n"
 		"  -R response size  specifies response size expected after execution of function\n"
-		"  -A addr           bind address for FPGA reply listener (default: 0.0.0.0)\n"
-		"  -B port           base port for FPGA reply listeners (thread i reads port+i)\n"
-			"  -G                enable verbose FPGA reply-listener debug logging\n"
+		"  -A addr           bind address for FPGA reply listener (with -Z 1)\n"
+		"  -B port           base port for FPGA reply listeners (thread i uses port+i)\n"
+			"  -G                enable verbose debug logging\n"
 			"  -L log latency    logs latency value if set to 0 to the dir mentioned\n"
 			"  -D log dir        stores log files in specified director\n"
 			"\n"
@@ -46,6 +46,8 @@ void usage(void)
 			"  -l addr           specifies local address to listen on\n"
 			"  -p port           specifies the port to listen on (default: %d)\n"
 			"  -S start_cpu      specifies the starting cpu to bind\n"
+			"  -A addr           client address to open response connections to\n"
+			"  -B port           base port for response connections (thread i uses port+i)\n"
 			"\n"
 			"The supported test modes are:\n"
 			"  * read            read data from the server end\n"
@@ -100,6 +102,9 @@ int parse_options(int argc, char **argv)
 	ctx.fpga_reply_port = 0;
 	ctx.fpga_debug = 0;
 	ctx.fpga_listeners_ready = 0;
+	ctx.server_response_addr = NULL;
+	ctx.server_response_port = 0;
+	ctx.server_debug = 0;
 	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:A:B:Gisqh")) != -1) {
 		switch (opt) {
 		case 's':
@@ -242,6 +247,38 @@ int parse_options(int argc, char **argv)
 				"invalid fpga reply port range: %d-%ld: out of range\n",
 				ctx.fpga_reply_port, max_port);
 			exit(1);
+		}
+	}
+
+	/* Server mode: copy -A/-B to server_response_* (separate from FPGA client settings) */
+	if (!ctx.is_client) {
+		/* Move parsed -A/-B values to server-specific variables */
+		ctx.server_response_addr = ctx.fpga_reply_addr;
+		ctx.server_response_port = ctx.fpga_reply_port;
+		ctx.server_debug = ctx.fpga_debug;
+		/* Clear the fpga_* variables so they don't interfere */
+		ctx.fpga_reply_addr = NULL;
+		ctx.fpga_reply_port = 0;
+		ctx.fpga_debug = 0;
+
+		/* Debug: print parsed values */
+		printf("[options] Server mode: response_addr=%s, response_port=%d, debug=%d\n",
+		       ctx.server_response_addr ? ctx.server_response_addr : "(null)",
+		       ctx.server_response_port, ctx.server_debug);
+
+		/* Validate server response connection settings */
+		if (ctx.server_response_port != 0) {
+			if (ctx.server_response_addr == NULL) {
+				fprintf(stderr, "error: -A (client address) is required when -B is specified in server mode\n");
+				exit(1);
+			}
+			long max_port = (long)ctx.server_response_port + ctx.nr_thread - 1;
+			if (max_port >= 65536) {
+				fprintf(stderr,
+					"invalid response port range: %d-%ld: out of range\n",
+					ctx.server_response_port, max_port);
+				exit(1);
+			}
 		}
 	}
 

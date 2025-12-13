@@ -145,13 +145,28 @@ static void on_rr_read_done(struct connection *conn)
 	                    conn->read.off, conn->read.budget, (long)(conn->read.off - conn->read.budget), conn->thread->id);
 	        }
 	        assert((conn->read.off) == (conn->read.budget));
+		// /* Log each completed response for visibility */
+		// printf("[client] received response: thread=%d sid=%d bytes=%lu\n",
+		//        conn->thread->id, conn->sid, (unsigned long)conn->read.budget);
 	        update_latency(conn);
 		if (conn->test == TEST_CRR){
 			conn->to_close = 1;
 		}
 		else if(conn->test == TEST_RR){
+		  /* Set write budget for next request:
+		   * FPGA mode uses message_size, CPU mode uses req_size + header */
+		  if (conn->fpga_srv == 1) {
 		  conn->write.budget = conn->message_size;
+		  } else {
+		    conn->write.budget = conn->req_size + sizeof(struct test_info);
+		  }
 		  event_queue_add(conn, TPA_EVENT_OUT);
+
+		  /* In open-connection mode, re-enqueue for pairing with next reply connection */
+		  if (ctx.fpga_reply_port != 0) {
+		    fpga_request_enqueue(conn->thread, conn);
+		    fpga_try_pair(conn->thread);
+		  }
 		}
 
 	}
@@ -170,8 +185,27 @@ static void on_rr_read_done(struct connection *conn)
 		assert(conn->read.off == conn->req_size);
 		conn->reassemble.off = 0;
 		conn->pkt_idx = 0;
-		conn->write.budget = conn->response_size;
-		event_queue_add(conn, TPA_EVENT_OUT);
+
+		/* Check if we're in open-connection mode (open new connection for response) */
+		if (ctx.server_response_port != 0) {
+			/* Check if response connection already exists (from previous request) */
+			if (conn->server_response_conn && conn->server_response_ready) {
+				/* Reuse existing response connection */
+				if (ctx.server_debug) {
+					printf("[server-debug] Reusing response conn sid=%d for request sid=%d\n",
+					       conn->server_response_conn->sid, conn->sid);
+				}
+				server_bind_pair(conn, conn->server_response_conn);
+			} else {
+				/* First request: Queue to open a new response connection */
+				server_request_enqueue(conn->thread, conn);
+			}
+			/* Don't set write.budget here - the response conn will handle it */
+		} else {
+			/* Original behavior: respond on same connection */
+			conn->write.budget = conn->response_size;
+			event_queue_add(conn, TPA_EVENT_OUT);
+		}
 	}
 
 	conn->read.off = 0;
@@ -308,6 +342,7 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	struct mbuf *mbuf;
 	int len;
 	int nr_iov = 0;
+	uint8_t *input_buf;
 
 	mbuf = mbuf_alloc(thread->mbuf_pool);
 	assert(mbuf != NULL);
@@ -315,7 +350,13 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	mbuf->private = conn_get(conn);
 
 	len = MIN(conn->write.budget, MBUF_SIZE);
-	// set buff to some random value
+	
+	/* Get input buffer: for response connections, read from the paired request connection */
+	if (conn->is_server_response && conn->server_request_conn) {
+		input_buf = conn->server_request_conn->reassemble.reassembly_buf;
+	} else {
+		input_buf = conn->reassemble.reassembly_buf;
+	}
 
 	/*
 	 * Support function chaining for CPU path (Z=0):
@@ -329,21 +370,21 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 		if (func_code == SPARSE_TRANSFER || func_code == MAPID ||
 		    func_code == LOGIT || func_code == NORM || func_code == TOPK) {
 			if (func_code == SPARSE_TRANSFER) {
-				sparse_transfer(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+				sparse_transfer(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == MAPID) {
-				mapid(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+				mapid(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == LOGIT) {
-				logit(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+				logit(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == NORM) {
-				norm(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+				norm(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == TOPK) {
-				topk(mbuf->data, conn->req_size, conn->reassemble.reassembly_buf);
+				topk(mbuf->data, conn->req_size, input_buf);
 			}
 		} else {
 			/* Chaining path: ping-pong through two temporary buffers */
 			uint8_t tmp_a[MBUF_SIZE];
 			uint8_t tmp_b[MBUF_SIZE];
-			void *in_ptr = conn->reassemble.reassembly_buf;
+			void *in_ptr = input_buf;
 			void *out_ptr = tmp_a;
 			int code = func_code;
 			while (code > 0) {
@@ -551,6 +592,31 @@ static void on_write_done(struct connection *conn, int bytes_write)
 		conn->fpga_ready = 0;
 	}
 
+	/* Server response connection: after sending response, prepare for next request */
+	if (conn->is_server_response && conn->server_request_conn) {
+		struct connection *request_conn = conn->server_request_conn;
+
+		if (ctx.server_debug) {
+			printf("[server-debug] Response sent on sid=%d, resetting request sid=%d for next request\n",
+			       conn->sid, request_conn->sid);
+		}
+
+		/* Reset the request connection for the next request */
+		/* Keep server_response_ready = 1 so connection can be reused! */
+		request_conn->read.off = 0;
+		request_conn->read.budget = request_conn->message_size;
+		request_conn->reassemble.off = 0;
+		request_conn->pkt_idx = 0;
+		request_conn->info_off = 0; /* Reset to re-read test_info header for next request */
+
+		/* Reset response connection state for next response */
+		conn->write.off = 0;
+		conn->write.budget = 0; /* Will be set when next request arrives */
+		
+		/* Keep response connection alive for reuse - don't close it!
+		 * It will be reused for the next response. */
+	}
+
 	conn->last_ns = get_time_in_ns();
 	conn->pkt_idx = 0;
 	conn->write.off = 0;
@@ -563,6 +629,26 @@ int conn_on_write(struct connection *conn)
 	int nr_iov = 0;
 	int i;
 
+	/* Server response connection: on first TPA_EVENT_OUT, TCP handshake is complete.
+	 * Now we can pair it with the request and send the response. */
+	if (conn->is_server_response && !conn->server_response_ready && conn->server_request_conn) {
+		struct connection *request_conn = conn->server_request_conn;
+		
+		if (ctx.server_debug) {
+			printf("[server-debug] Response conn sid=%d TCP handshake complete, pairing with request sid=%d\n",
+			       conn->sid, request_conn->sid);
+		}
+		
+		conn->server_response_ready = 1;
+		
+		/* Now call server_bind_pair to set up the response data */
+		server_bind_pair(request_conn, conn);
+		
+		/* Don't return - continue to send the response */
+	}
+
+	/* For FPGA (Z=1), wait until paired before sending.
+	 * For CPU (Z=0), allow sending immediately (fpga_ready==1). */
 	if (conn->is_client && conn->fpga_srv == 1 && !conn->fpga_ready) {
 		event_queue_add(conn, TPA_EVENT_OUT);
 		return 0;

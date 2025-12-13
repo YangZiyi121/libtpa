@@ -22,7 +22,10 @@ static void process_conn(struct connection *conn)
 		ret = conn_on_write(conn);
 
     if (ret < 0 || (events & (TPA_EVENT_ERR | TPA_EVENT_HUP)) || conn->to_close){
-      if (!conn->is_client && conn->reassemble.reassembly_buf != NULL){
+      /* Only free reassembly_buf if this connection owns it.
+       * Server response connections borrow the buffer from request connections,
+       * so they should NOT free it (the request connection will free it). */
+      if (!conn->is_client && !conn->is_server_response && conn->reassemble.reassembly_buf != NULL){
             free(conn->reassemble.reassembly_buf);
             conn->reassemble.reassembly_buf = NULL;
       }
