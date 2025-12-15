@@ -68,25 +68,53 @@ static int read_test_info(struct connection *conn, struct tpa_iovec *iov, int si
 	int bytes_eaten = 0;
 	int idx = 0;
 	int len;
+	int sum = 0;
+
+	if (ctx.server_debug) {
+		printf("[read_test_info] sid=%d, info_off=%u, size=%d\n", conn->sid, off, size);
+	}
 
 	/* if already parsed? */
 	// if (off == sizeof(struct test_info))
 	//	return 0;
-	while (off < sizeof(struct test_info)) {
-		len = MIN(iov[idx].iov_len, sizeof(struct test_info) - off);
-		memcpy(&conn->info_raw[off], iov[idx].iov_base, len);
+	/*
+	 * The 64B test_info header may arrive split across multiple iov entries
+	 * (and/or only partially in this read). Walk iovs until we either finish
+	 * the header or consume all bytes_read.
+	 *
+	 * NOTE: bytes_eaten counts bytes consumed from the stream (not per-iov),
+	 * so read_test_data() can skip exactly bytes_eaten bytes even if the header
+	 * ends in the middle of an iov.
+	 */
+	while (off < sizeof(struct test_info) && sum < size) {
+		/* bytes available in this iov, but don't exceed total bytes_read (size) */
+		len = iov[idx].iov_len;
+		if (sum + len > size)
+			len = size - sum;
 
-		off += len;
-		bytes_eaten += len;
+		/* take at most remaining header bytes */
+		int take = (int)MIN((size_t)len, sizeof(struct test_info) - off);
+		if (take > 0) {
+			memcpy(&conn->info_raw[off], iov[idx].iov_base, take);
+			off += (uint32_t)take;
+			bytes_eaten += take;
+		}
 
-		size -= len;
-		if (size == 0)
+		/* advance to next iov (even if take<len; remaining bytes are payload) */
+		sum += len;
+		idx += 1;
+		/* safety: avoid running off the fixed iov array if size bookkeeping is off */
+		if (idx >= BATCH_SIZE)
 			break;
 	}
 	conn->info_off = off;
 
-	if (off == sizeof(struct test_info))
+	if (off == sizeof(struct test_info)) {
+		if (ctx.server_debug) {
+			printf("[read_test_info] Header complete, calling init_server_conn for sid=%d\n", conn->sid);
+		}
 		init_server_conn(conn);
+	}
 
 	return bytes_eaten;
 }
@@ -179,8 +207,16 @@ static void on_rr_read_done(struct connection *conn)
 	 */
 	if (!conn->is_client) {
 	  if(conn->read.off < conn->req_size){
+	    if (ctx.server_debug) {
+	      printf("[server-debug] on_rr_read_done: waiting for more data, read.off=%zu, req_size=%u\n",
+	             conn->read.off, conn->req_size);
+	    }
 	    conn->pkt_idx += 1;
 	    return;
+	  }
+	  if (ctx.server_debug) {
+	    printf("[server-debug] on_rr_read_done: request complete, read.off=%zu, req_size=%u\n",
+	           conn->read.off, conn->req_size);
 	  }
 		assert(conn->read.off == conn->req_size);
 		conn->reassemble.off = 0;
@@ -311,16 +347,44 @@ int conn_on_read(struct connection *conn)
 			if (errno == EAGAIN)
 				break;
 
+			if (ctx.server_debug && !conn->is_client) {
+				printf("[server-debug] conn_on_read: sid=%d tpa_zreadv error=%d (%s)\n",
+				       conn->sid, errno, strerror(errno));
+			}
 			return -1;
 		}
 
-		if (bytes_read == 0)
+		if (bytes_read == 0) {
+			if (ctx.server_debug && !conn->is_client) {
+				printf("[server-debug] conn_on_read: sid=%d peer closed (bytes_read=0)\n",
+				       conn->sid);
+			}
 			return -1;
+		}
 		bytes_eaten = 0;
 		if (!conn->is_client && conn->pkt_idx == 0) {
 		      bytes_eaten = read_test_info(conn, iov, bytes_read);
+		      /*
+		       * IMPORTANT: Don't run RR completion logic until the full
+		       * test_info header is received (init_server_conn sets budgets).
+		       *
+		       * When the header arrives split across reads, conn->read.budget
+		       * is still 0 here; calling on_read_done() would incorrectly
+		       * treat the request as "complete" and can close/crash the conn.
+		       */
+		      if (conn->info_off < sizeof(struct test_info)) {
+			      /* Consume and free all received buffers; no payload yet. */
+			      bytes_eaten = bytes_read;
+			      read_test_data(conn, iov, bytes_read, bytes_eaten);
+			      continue;
+		      }
 		}
 		read_test_data(conn, iov, bytes_read, bytes_eaten);
+
+		if (ctx.server_debug && !conn->is_client) {
+			printf("[server-debug] conn_on_read: bytes_read=%d, bytes_eaten=%d, read.off=%zu, read.budget=%zu, reassemble.off=%zu, req_size=%u\n",
+			       bytes_read, bytes_eaten, conn->read.off, conn->read.budget, conn->reassemble.off, conn->req_size);
+		}
 
 		on_read_done(conn);
 	}
@@ -337,12 +401,25 @@ static void zwrite_done(void *iov_base, void *iov_param)
 	conn_put(conn);
 }
 
+static void heap_write_done(void *iov_base, void *iov_param)
+{
+	struct connection *conn = iov_param;
+	free(iov_base);
+	if (conn)
+		conn_put(conn);
+}
+
 static int offrac_process(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
 	struct mbuf *mbuf;
 	int len;
 	int nr_iov = 0;
 	uint8_t *input_buf;
+
+	if (ctx.server_debug) {
+		printf("[offrac_process] CALLED: sid=%d, write.budget=%zu, req_size=%u, response_size=%u, func=%d\n",
+		       conn->sid, conn->write.budget, conn->req_size, conn->response_size, conn->func);
+	}
 
 	mbuf = mbuf_alloc(thread->mbuf_pool);
 	assert(mbuf != NULL);
@@ -369,6 +446,10 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 		/* Fast path: single known function id */
 		if (func_code == SPARSE_TRANSFER || func_code == MAPID ||
 		    func_code == LOGIT || func_code == NORM || func_code == TOPK) {
+			if (ctx.server_debug && conn->pkt_idx == 0) {
+				printf("[offrac_process] Fast path: func=%d, req_size=%u, len=%d, input_buf=%p, mbuf->data=%p\n",
+				       func_code, conn->req_size, len, (void*)input_buf, (void*)mbuf->data);
+			}
 			if (func_code == SPARSE_TRANSFER) {
 				sparse_transfer(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == MAPID) {
@@ -382,51 +463,68 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 			}
 		} else {
 			/* Chaining path: ping-pong through two temporary buffers */
-			uint8_t tmp_a[MBUF_SIZE];
-			uint8_t tmp_b[MBUF_SIZE];
-			void *in_ptr = input_buf;
-			void *out_ptr = tmp_a;
-			int code = func_code;
-			while (code > 0) {
-				int digit = code % 10; /* rightmost digit first */
-				switch (digit) {
-				case 1: /* SPARSE_TRANSFER */
-					sparse_transfer(out_ptr, conn->req_size, in_ptr);
-					break;
-				case 2: /* MAPID */
-					mapid(out_ptr, conn->req_size, in_ptr);
-					break;
-				case 3: /* LOGIT */
-					logit(out_ptr, conn->req_size, in_ptr);
-					break;
-				case 5: /* NORM */
-					norm(out_ptr, conn->req_size, in_ptr);
-					break;
-				case 6: /* TOPK */
-					topk(out_ptr, conn->req_size, in_ptr);
-					break;
-				case 7: /* CNN removed - no longer supported */
-					/* CNN has been removed; pass-through */
-					memcpy(out_ptr, in_ptr, MIN(conn->req_size, MBUF_SIZE));
-					break;
-				default:
-					/* Unknown step: pass-through */
-					memcpy(out_ptr, in_ptr, MIN(conn->req_size, MBUF_SIZE));
-				}
+			/* Use heap allocation to avoid stack overflow for large request sizes */
+			size_t buf_size = (conn->req_size > MBUF_SIZE) ? conn->req_size : MBUF_SIZE;
+			uint8_t *tmp_a = (uint8_t *)malloc(buf_size);
+			uint8_t *tmp_b = (uint8_t *)malloc(buf_size);
+			
+			/* Safety check - ensure buffers allocated successfully */
+			
+			if (tmp_a == NULL || tmp_b == NULL) {
+				fprintf(stderr, "[offrac_process] Failed to allocate %zu bytes for chaining buffers\n", buf_size);
+				if (tmp_a) free(tmp_a);
+				if (tmp_b) free(tmp_b);
+				/* Fallback: just copy input to output */
+				memcpy(mbuf->data, input_buf, MIN(conn->req_size, MBUF_SIZE));
+			} else {
+				void *in_ptr = input_buf;
+				void *out_ptr = tmp_a;
+				int code = func_code;
+				while (code > 0) {
+					int digit = code % 10; /* rightmost digit first */
+					switch (digit) {
+					case 1: /* SPARSE_TRANSFER */
+						sparse_transfer(out_ptr, conn->req_size, in_ptr);
+						break;
+					case 2: /* MAPID */
+						mapid(out_ptr, conn->req_size, in_ptr);
+						break;
+					case 3: /* LOGIT */
+						logit(out_ptr, conn->req_size, in_ptr);
+						break;
+					case 5: /* NORM */
+						norm(out_ptr, conn->req_size, in_ptr);
+						break;
+					case 6: /* TOPK */
+						topk(out_ptr, conn->req_size, in_ptr);
+						break;
+					case 7: /* CNN removed - no longer supported */
+						/* CNN has been removed; pass-through */
+						memcpy(out_ptr, in_ptr, MIN(conn->req_size, buf_size));
+						break;
+					default:
+						/* Unknown step: pass-through */
+						memcpy(out_ptr, in_ptr, MIN(conn->req_size, buf_size));
+					}
 
-				/* flip buffers for next stage */
-				if (in_ptr == conn->reassemble.reassembly_buf) {
-					in_ptr = out_ptr;
-					out_ptr = (out_ptr == (void *)tmp_a) ? (void *)tmp_b : (void *)tmp_a;
-				} else {
-					void *prev_out = in_ptr;
-					in_ptr = out_ptr;
-					out_ptr = prev_out;
+					/* flip buffers for next stage */
+					if (in_ptr == input_buf) {
+						in_ptr = out_ptr;
+						out_ptr = (out_ptr == (void *)tmp_a) ? (void *)tmp_b : (void *)tmp_a;
+					} else {
+						void *prev_out = in_ptr;
+						in_ptr = out_ptr;
+						out_ptr = prev_out;
+					}
+					code /= 10;
 				}
-				code /= 10;
+				/* Final result is in in_ptr after the last swap; copy to mbuf->data */
+				memcpy(mbuf->data, in_ptr, MIN(conn->req_size, MBUF_SIZE));
+				
+				/* Free the temporary buffers */
+				free(tmp_a);
+				free(tmp_b);
 			}
-			/* Final result is in in_ptr after the last swap; copy to mbuf->data */
-			memcpy(mbuf->data, in_ptr, MIN(conn->req_size, MBUF_SIZE));
 		}
 	}
 
@@ -469,6 +567,46 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 	      memcpy(&fpga_hdr[56], &request_size, sizeof(uint32_t)); // Bytes 56–59
 	}
 
+	/*
+	 * CPU mode: if total request (header+payload) exceeds one MBUF (4096),
+	 * avoid multi-iov zero-copy writes. We've observed open-connection mode
+	 * get stuck (server sees OUT-only then ERR/ECONNRESET) when the client
+	 * uses multi-iov zwritev for these sizes.
+	 *
+	 * Workaround: build one contiguous buffer and force non-zero-copy
+	 * (iov_phys=0) so libtpa copies and reliably transmits.
+	 */
+	if (conn->fpga_srv == 0 && budget > MBUF_SIZE) {
+		uint8_t *buf = (uint8_t *)malloc((size_t)budget);
+		if (!buf) {
+			fprintf(stderr, "[setup_test_data] malloc(%d) failed\n", budget);
+			return 0;
+		}
+
+		/* Fill payload pattern across the whole buffer first */
+		{
+			static const uint8_t pattern[4] = {0x07, 0x34, 0xB8, 0xE8};
+			for (int j = 0; j < budget; j++)
+				buf[j] = pattern[j & 3];
+		}
+
+		/* Write header at the start */
+		if (conn->pkt_idx == 0) {
+			if (conn->fpga_srv == 1) {
+				memcpy(buf, fpga_hdr, sizeof(struct test_info));
+			} else {
+				memcpy(buf, info, sizeof(struct test_info));
+			}
+		}
+
+		iov[0].iov_base = buf;
+		iov[0].iov_len = (uint32_t)budget;
+		iov[0].iov_phys = 0; /* force fallback copy */
+		iov[0].iov_write_done = heap_write_done;
+		iov[0].iov_param = conn_get(conn);
+		return 1;
+	}
+
 	while (off < budget) {
 		mbuf = mbuf_alloc(thread->mbuf_pool);
 		assert(mbuf != NULL);
@@ -497,7 +635,8 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		// 	byte_data[j] = (j / sizeof(uint32_t)) % 4;
 		// }
 
-		if (conn->pkt_idx == 0){
+		/* Only write header to the FIRST mbuf of the first request */
+		if (conn->pkt_idx == 0 && off == 0){
 		      if(conn->fpga_srv == 1){
 			    memcpy(mbuf->data, fpga_hdr, sizeof(struct test_info));
 		      }else{
@@ -655,11 +794,21 @@ int conn_on_write(struct connection *conn)
 	}
 
 	while (conn->write.budget) {
-		struct tpa_iovec iov[1];
+		/* Support large messages: up to 64KB needs 16 iovs (64KB/4KB) */
+		struct tpa_iovec iov[16];
 
 		if (mbuf_pool_free_count(thread->mbuf_pool) * MBUF_SIZE < conn->write.budget) {
+			if (ctx.fpga_debug && conn->is_client) {
+				printf("[client-debug] Not enough mbufs: free_count=%u, need=%zu\n",
+				       mbuf_pool_free_count(thread->mbuf_pool), conn->write.budget / MBUF_SIZE + 1);
+			}
 			event_queue_add(conn, TPA_EVENT_OUT);
 			break;
+		}
+
+		if (ctx.fpga_debug && conn->is_client && conn->pkt_idx == 0) {
+			printf("[client-debug] Sending request: write.budget=%zu, req_size=%u\n",
+			       conn->write.budget, conn->req_size);
 		}
 
 		if (conn->is_client) {
@@ -669,6 +818,12 @@ int conn_on_write(struct connection *conn)
 		}
 
 		bytes_write = tpa_zwritev(conn->sid, iov, nr_iov);
+		
+		if (ctx.fpga_debug && conn->is_client) {
+			printf("[client-debug] tpa_zwritev: nr_iov=%d, bytes_write=%d, write.budget=%zu\n",
+			       nr_iov, bytes_write, conn->write.budget);
+		}
+		
 		conn->pkt_idx += 1;
 
 		if (bytes_write < 0) {

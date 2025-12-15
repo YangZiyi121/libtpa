@@ -15,6 +15,35 @@ static void process_conn(struct connection *conn)
 	events = conn->events;
 	conn->events = 0;
 
+	/* Debug: show whether we ever get IN events for accepted server conns */
+	if (ctx.server_debug && !conn->is_client) {
+		printf("[server-debug] process_conn: sid=%d events=0x%x (IN=%d OUT=%d ERR=%d HUP=%d)\n",
+		       conn->sid, events,
+		       !!(events & TPA_EVENT_IN),
+		       !!(events & TPA_EVENT_OUT),
+		       !!(events & TPA_EVENT_ERR),
+		       !!(events & TPA_EVENT_HUP));
+	}
+
+	/*
+	 * Some TPA event paths behave like edge-trigger: if the peer sends data
+	 * very quickly after connect/accept, the first readable transition can
+	 * happen before we register/observe TPA_EVENT_IN, leaving us with only
+	 * TPA_EVENT_OUT events and a stuck connection.
+	 *
+	 * For server-side request connections that haven't even parsed the
+	 * fixed-size test_info header yet, opportunistically attempt a nonblocking
+	 * read when we get OUT but no IN. This is safe (conn_on_read will stop at
+	 * EAGAIN) and fixes the "server never receives 4096B requests" symptom.
+	 */
+	if (!conn->is_client &&
+	    !(events & (TPA_EVENT_IN | TPA_EVENT_ERR | TPA_EVENT_HUP)) &&
+	    (events & TPA_EVENT_OUT) &&
+	    conn->pkt_idx == 0 &&
+	    conn->info_off < sizeof(struct test_info)) {
+		ret = conn_on_read(conn);
+	}
+
 	if (events & (TPA_EVENT_IN | TPA_EVENT_ERR | TPA_EVENT_HUP))
 		ret = conn_on_read(conn);
 
@@ -22,6 +51,10 @@ static void process_conn(struct connection *conn)
 		ret = conn_on_write(conn);
 
     if (ret < 0 || (events & (TPA_EVENT_ERR | TPA_EVENT_HUP)) || conn->to_close){
+      if (ctx.server_debug && !conn->is_client) {
+	      printf("[server-debug] closing sid=%d ret=%d events=0x%x to_close=%d\n",
+		     conn->sid, ret, events, conn->to_close);
+      }
       /* Only free reassembly_buf if this connection owns it.
        * Server response connections borrow the buffer from request connections,
        * so they should NOT free it (the request connection will free it). */
