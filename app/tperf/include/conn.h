@@ -108,6 +108,8 @@ struct connection {
 	uint8_t in_server_waiting_requests;
 	uint8_t in_server_waiting_responses;
 	uint8_t server_response_ready;      /* Response conn established and ready */
+	uint8_t server_waiting_for_ack;     /* Request conn waiting for response ACK before next request */
+	int server_port_offset;             /* Port offset for multi-port support (port - base_port) */
 	struct connection *server_response_conn; /* For request conn: the response conn */
 	struct connection *server_request_conn;  /* For response conn: the original request */
 	TAILQ_ENTRY(connection) server_queue_node;

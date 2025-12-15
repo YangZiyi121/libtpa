@@ -103,10 +103,9 @@ static void open_response_connection(struct test_thread *thread, struct connecti
 	int sid;
 	struct connection *response_conn;
 
-	/* Each thread responds on its own port: response_port + thread_id.
-	 * Combined with per-thread request listeners (port + thread_id),
-	 * this ensures 1:1 mapping between request and response ports. */
-	response_port = ctx.server_response_port + thread->id;
+	/* Use the port offset that was determined when this connection was accepted.
+	 * This maintains 1:1 mapping between request and response ports. */
+	response_port = ctx.server_response_port + request_conn->server_port_offset;
 
 	if (ctx.server_debug) {
 		printf("[server-debug] thread %d opening response connection to %s:%d for request sid=%d\n",
@@ -234,11 +233,16 @@ void init_server_conn(struct connection *conn)
 
 	case TEST_RR:
 	case TEST_CRR:
-		conn->read.budget  = message_size;
+		/* For CPU server, read the actual request payload size (req_size).
+		 * The client sends req_size bytes of payload (after the test_info header). */
+		conn->read.budget  = conn->req_size;
 		conn->write.budget = 0; /* write only after we got the req */
 		break;
 	}
 }
+
+/* Store port offset in listener's data field - we'll retrieve this on accept */
+static int *port_offset_data[256];  /* Global array to store port offsets */
 
 /* Start listener for a specific thread (per-thread port in open-connection mode) */
 static void start_server_thread_listener(struct test_thread *thread)
@@ -246,39 +250,69 @@ static void start_server_thread_listener(struct test_thread *thread)
 	struct tpa_sock_opts opts;
 	int port;
 	int sid;
+	int i;
 
 	memset(&opts, 0, sizeof(opts));
 
-	/* In open-connection mode, each thread listens on its own port (base + thread_id).
-	 * Keep listen_scaling=0 so that port i is handled only by thread i; this preserves the
-	 * 1:1 mapping between request port and response port (and keeps pairing on the same thread). */
+	/* In open-connection mode with multiple ports, only thread 0 creates the listeners.
+	 * Use listen_scaling=1 so all threads can accept from all ports.
+	 * This allows flexible port:thread mapping. */
 	if (ctx.server_response_port != 0) {
-		opts.listen_scaling = 0;
-		port = ctx.port + thread->id;
+		/* Only thread 0 creates all the listeners */
+		if (thread->id != 0)
+			return;
+		
+		/* Use listen_scaling=1 so all threads can accept connections from any port */
+		opts.listen_scaling = 1;
+		
+		/* Create listener for each port */
+		for (i = 0; i < ctx.nr_ports; i++) {
+			port = ctx.port + i;
+			
+			/* Store port offset in data field so we can retrieve it on accept */
+			port_offset_data[i] = (int *)malloc(sizeof(int));
+			*port_offset_data[i] = i;
+			opts.data = port_offset_data[i];
+			
+			sid = tpa_listen_on(ctx.local, port, &opts);
+			if (sid < 0) {
+				fprintf(stderr, "failed to listen on port %d\n", port);
+				exit(1);
+			}
+			
+			if (ctx.server_debug) {
+				printf("[server-debug] thread 0 created listener on port %d (offset=%d, data=%p)\n", 
+				       port, i, opts.data);
+			}
+		}
+		
+		if (ctx.server_response_addr != NULL) {
+			printf("[server] Open-connection mode enabled:\n");
+			printf("[server]   Threads: %d\n", ctx.nr_thread);
+			printf("[server]   Request ports: %d-%d (%d ports)\n", 
+			       ctx.port, ctx.port + ctx.nr_ports - 1, ctx.nr_ports);
+			printf("[server]   Response ports: %d-%d (%d ports)\n", 
+			       ctx.server_response_port, ctx.server_response_port + ctx.nr_ports - 1, ctx.nr_ports);
+			printf("[server]   All threads can accept from all ports (listen_scaling=1)\n");
+		}
 	} else {
 		/* Non-open-connection mode: shared listener with scaling */
 		opts.listen_scaling = 1;
+		opts.data = NULL;
 		port = ctx.port;
 		/* Only thread 0 creates the shared listener */
 		if (thread->id != 0)
 			return;
-	}
-
-	sid = tpa_listen_on(ctx.local, port, &opts);
-	if (sid < 0) {
-		fprintf(stderr, "failed to listen on port %d\n", port);
-		exit(1);
-	}
-
-	if (ctx.server_debug) {
-		printf("[server-debug] thread %d listening on port %d\n", thread->id, port);
-	}
-
-	if (thread->id == 0 && ctx.server_response_port != 0 && ctx.server_response_addr != NULL) {
-		printf("[server] Open-connection mode enabled:\n");
-		printf("[server]   Request ports: %d-%d\n", ctx.port, ctx.port + ctx.nr_thread - 1);
-		printf("[server]   Response ports: %d-%d\n", ctx.server_response_port,
-		       ctx.server_response_port + ctx.nr_thread - 1);
+		
+		sid = tpa_listen_on(ctx.local, port, &opts);
+		if (sid < 0) {
+			fprintf(stderr, "failed to listen on port %d\n", port);
+			exit(1);
+		}
+		
+		if (ctx.server_debug) {
+			printf("[server-debug] thread %d listening on port %d (shared)\n", thread->id, port);
+		}
 	}
 }
 
@@ -287,10 +321,39 @@ static void accept_socks(struct test_thread *thread)
 	int sid[BATCH_SIZE];
 	int nr_sock;
 	int i;
+	struct connection *conn;
+	struct tpa_sock_info sock_info;
 
 	nr_sock = tpa_accept_burst(thread->worker, sid, BATCH_SIZE);
-	for (i = 0; i < nr_sock; i++)
-		conn_create(thread, sid[i]);
+	for (i = 0; i < nr_sock; i++) {
+		conn = conn_create(thread, sid[i]);
+		
+		/* In open-connection mode, get port offset from listener's data field */
+		if (ctx.server_response_port != 0) {
+			if (tpa_sock_info_get(sid[i], &sock_info) == 0 && sock_info.data != NULL) {
+				/* Retrieve port offset that was stored in listener opts.data */
+				conn->server_port_offset = *(int *)sock_info.data;
+				
+				if (ctx.server_debug) {
+					printf("[server-debug] Accepted connection on port %d (offset=%d from data field)\n",
+					       ctx.port + conn->server_port_offset, conn->server_port_offset);
+				}
+				
+				/* Sanity check */
+				if (conn->server_port_offset < 0 || conn->server_port_offset >= ctx.nr_ports) {
+					fprintf(stderr, "[server-error] Invalid port offset %d from data field (expected 0-%d)\n",
+						conn->server_port_offset, ctx.nr_ports - 1);
+					conn->server_port_offset = 0;
+				}
+			} else {
+				fprintf(stderr, "[server-warning] Could not get port offset for sid %d (data=%p)\n", 
+					sid[i], sock_info.data);
+				conn->server_port_offset = 0; /* Default to first port */
+			}
+		} else {
+			conn->server_port_offset = 0;
+		}
+	}
 }
 
 static void *server_thread_loop(void *arg)

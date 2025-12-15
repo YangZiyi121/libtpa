@@ -179,9 +179,16 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 
 	thread->nr_client_conn += 1;
 
-	/* If using response listener (-A/-B set), enqueue for pairing with incoming response connections */
-	if (ctx.fpga_reply_port != 0 && (conn->test == TEST_RR || conn->test == TEST_CRR)) {
-		/* For FPGA, pairing sets fpga_ready; CPU stays ready. */
+	/* FPGA mode: enqueue for pairing with reply connections (same as one_to_one_mapping) */
+	if (ctx.fpga_srv == 1 && (conn->test == TEST_RR || conn->test == TEST_CRR)) {
+		/* Mark as ready to send first request, which triggers FPGA connection pairing */
+		conn->fpga_ready = 1;
+		fpga_request_enqueue(thread, conn);
+		fpga_try_pair(thread);
+	}
+	/* CPU open-connection mode: enqueue for pairing if -B flag is set */
+	else if (ctx.fpga_reply_port != 0 && (conn->test == TEST_RR || conn->test == TEST_CRR)) {
+		/* CPU mode: stays ready (fpga_ready = 1), enqueue for response connection pairing */
 		fpga_request_enqueue(thread, conn);
 		fpga_try_pair(thread);
 	}
@@ -194,12 +201,14 @@ static void bootstrap_test(struct test_thread *thread)
 	int sid;
 	int server_port;
 
-	/* In open-connection mode, each client thread connects to its own server port
-	 * (base_port + thread_id) to ensure 1:1 mapping with response ports.
-	 * In normal mode, all threads connect to the same port. */
+	/* Port mapping for open-connection mode (both FPGA and CPU):
+	 * Each thread connects to its own port (base + thread_id) for 1:1 mapping.
+	 * In normal mode (no -B flag), all threads connect to the same port. */
 	if (ctx.fpga_reply_port != 0) {
+		/* Open-connection mode (FPGA or CPU): per-thread ports for 1:1 mapping */
 		server_port = ctx.port + thread->id;
 	} else {
+		/* Normal mode: single shared port */
 		server_port = ctx.port;
 	}
 

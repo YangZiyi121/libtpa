@@ -43,6 +43,7 @@ void usage(void)
 			"Server options:\n"
 			"  -s                run in server mode\n"
 			"  -n nr_thread      specifies the thread count (default: 1)\n"
+			"  -P nr_ports       specifies the number of ports (default: same as nr_thread)\n"
 			"  -l addr           specifies local address to listen on\n"
 			"  -p port           specifies the port to listen on (default: %d)\n"
 			"  -S start_cpu      specifies the starting cpu to bind\n"
@@ -85,6 +86,7 @@ int parse_options(int argc, char **argv)
 	ctx.test          = -1;
 	ctx.port          = TPERF_PORT;
 	ctx.nr_thread     = DEFAULT_NR_THREAD;
+	ctx.nr_ports      = 0;  /* 0 means use nr_thread as default */
 	ctx.duration      = DEFAULT_DURATION;
 	ctx.message_size  = DEFAULT_MESSAGE_SIZE;
 	ctx.enable_tso    = 1;
@@ -105,7 +107,7 @@ int parse_options(int argc, char **argv)
 	ctx.server_response_addr = NULL;
 	ctx.server_response_port = 0;
 	ctx.server_debug = 0;
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:S:W:R:F:X:Z:L:D:A:B:Gisqh")) != -1) {
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:P:S:W:R:F:X:Z:L:D:A:B:Gisqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -154,6 +156,10 @@ int parse_options(int argc, char **argv)
 				fprintf(stderr, "invalid port: %d: out of range\n", ctx.port);
 				exit(1);
 			}
+			break;
+
+		case 'P':
+			PARSE_NUM(ctx.nr_ports, optarg, NUM_TYPE_NONE, "port count");
 			break;
 
 		case 'W':
@@ -252,6 +258,11 @@ int parse_options(int argc, char **argv)
 
 	/* Server mode: copy -A/-B to server_response_* (separate from FPGA client settings) */
 	if (!ctx.is_client) {
+		/* If nr_ports not specified, default to nr_thread */
+		if (ctx.nr_ports == 0) {
+			ctx.nr_ports = ctx.nr_thread;
+		}
+
 		/* Move parsed -A/-B values to server-specific variables */
 		ctx.server_response_addr = ctx.fpga_reply_addr;
 		ctx.server_response_port = ctx.fpga_reply_port;
@@ -262,7 +273,8 @@ int parse_options(int argc, char **argv)
 		ctx.fpga_debug = 0;
 
 		/* Debug: print parsed values */
-		printf("[options] Server mode: response_addr=%s, response_port=%d, debug=%d\n",
+		printf("[options] Server mode: nr_thread=%d, nr_ports=%d, response_addr=%s, response_port=%d, debug=%d\n",
+		       ctx.nr_thread, ctx.nr_ports,
 		       ctx.server_response_addr ? ctx.server_response_addr : "(null)",
 		       ctx.server_response_port, ctx.server_debug);
 
@@ -272,11 +284,22 @@ int parse_options(int argc, char **argv)
 				fprintf(stderr, "error: -A (client address) is required when -B is specified in server mode\n");
 				exit(1);
 			}
-			long max_port = (long)ctx.server_response_port + ctx.nr_thread - 1;
+			long max_port = (long)ctx.server_response_port + ctx.nr_ports - 1;
 			if (max_port >= 65536) {
 				fprintf(stderr,
 					"invalid response port range: %d-%ld: out of range\n",
 					ctx.server_response_port, max_port);
+				exit(1);
+			}
+		}
+
+		/* Validate request port range */
+		if (ctx.server_response_port != 0) {
+			long max_request_port = (long)ctx.port + ctx.nr_ports - 1;
+			if (max_request_port >= 65536) {
+				fprintf(stderr,
+					"invalid request port range: %d-%ld: out of range\n",
+					ctx.port, max_request_port);
 				exit(1);
 			}
 		}

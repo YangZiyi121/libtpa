@@ -604,7 +604,7 @@ static void on_write_done(struct connection *conn, int bytes_write)
 		/* Reset the request connection for the next request */
 		/* Keep server_response_ready = 1 so connection can be reused! */
 		request_conn->read.off = 0;
-		request_conn->read.budget = request_conn->message_size;
+		request_conn->read.budget = request_conn->req_size;
 		request_conn->reassemble.off = 0;
 		request_conn->pkt_idx = 0;
 		request_conn->info_off = 0; /* Reset to re-read test_info header for next request */

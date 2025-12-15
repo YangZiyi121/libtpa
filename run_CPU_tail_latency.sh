@@ -1,16 +1,16 @@
 #!/bin/bash
 
 # Base command parameters
-#sudo TPA_ID=client TPA_ETH_DEV=enp194s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -c 172.24.5.50 -d 10 -n 4 -m 1024 -R 1024 -t rr -X 1024 -Z 0 -F 1 -S 0 -p 3000
+#sudo TPA_ID=client TPA_ETH_DEV=enp194s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -c 172.24.5.50 -d 10 -n 4 -m 1024 -R 1024 -t rr -X 1024 -Z 0 -F 2 -S 0 -p 3000 -A 172.24.5.16 -B 4000 -G
 #sudo TPA_ID=server TPA_ETH_DEV=enp195s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -s -n 4 -S 1 -p 3000 -A 172.24.5.16 -B 4000 -G
-BASE_CMD="TPA_ETH_DEV=enp194s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.50 -p 3000 -d 30 -t rr -Z 0"
-
+#BASE_CMD="TPA_ETH_DEV=enp194s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.50 -p 3000 -d 30 -t rr -Z 0"
+BASE_CMD="TPA_ETH_DEV=enp194s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -c 172.24.5.50 -d 30 -t rr -Z 0 -p 3000 -A 172.24.5.16 -B 4000 -G"
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(12 1 1 1)           # Varying -F
-R_VALUES=(1024 1024 1024 1024)        # Varying -R
+F_VALUES=(2 1 1 1)           # Varying -F
+R_VALUES=(960 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
-N_VALUES=(20 1 1 1)
+N_VALUES=(24 1 1 1)
 
 # Check that arrays have the same length
 if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#N_VALUES[@]} ]; then

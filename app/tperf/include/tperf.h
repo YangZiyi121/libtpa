@@ -83,6 +83,7 @@ struct ctx {
 	int duration;
 	int message_size;
 	int nr_thread;
+	int nr_ports;  /* Number of ports to listen on (for open-connection mode) */
 	int nr_conn_per_thread;
 	int start_cpu;
 	int integrity_enabled;
