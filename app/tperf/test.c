@@ -409,6 +409,34 @@ static void heap_write_done(void *iov_base, void *iov_param)
 		conn_put(conn);
 }
 
+/* Helper to apply a single function */
+static void apply_single_function(int func_digit, void *out_buf, int req_size, void *in_buf)
+{
+	// printf("[apply_single_function] func_digit=%d, req_size=%d\n", func_digit, req_size);
+	// fflush(stdout);
+	
+	switch (func_digit) {
+	case 1: /* SPARSE_TRANSFER */
+		sparse_transfer(out_buf, req_size, in_buf);
+		break;
+	case 2: /* MAPID */
+		mapid(out_buf, req_size, in_buf);
+		break;
+	case 3: /* LOGIT */
+		logit(out_buf, req_size, in_buf);
+		break;
+	case 5: /* NORM */
+		norm(out_buf, req_size, in_buf);
+		break;
+	case 6: /* TOPK */
+		topk(out_buf, req_size, in_buf);
+		break;
+	default:
+		/* Unknown: pass-through */
+		memcpy(out_buf, in_buf, req_size);
+	}
+}
+
 static int offrac_process(struct test_thread *thread, struct connection *conn, struct tpa_iovec *iov)
 {
 	struct mbuf *mbuf;
@@ -416,10 +444,10 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	int nr_iov = 0;
 	uint8_t *input_buf;
 
-	if (ctx.server_debug) {
-		printf("[offrac_process] CALLED: sid=%d, write.budget=%zu, req_size=%u, response_size=%u, func=%d\n",
-		       conn->sid, conn->write.budget, conn->req_size, conn->response_size, conn->func);
-	}
+	/* Always print when offrac_process is called */
+	// printf("[offrac_process] CALLED: sid=%d, func=%d, chain_mode=%d, is_server_response=%d, open_conn=%d\n",
+	//        conn->sid, conn->func, ctx.chain_mode, conn->is_server_response, ctx.server_response_port != 0);
+	// fflush(stdout);
 
 	mbuf = mbuf_alloc(thread->mbuf_pool);
 	assert(mbuf != NULL);
@@ -436,20 +464,110 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 	}
 
 	/*
-	 * Support function chaining for CPU path (Z=0):
-	 * A multi-digit -F value like 12 means apply function 2 first, then 1.
-	 * We interpret digits right-to-left: while (func>0) { apply func%10; func/=10; }
-	 * Single-digit values preserve existing behavior.
+	 * Chain mode (-K flag on server):
+	 * - For -F XY: process function X locally (first digit)
+	 * - With open connections (-A/-B): process X only, forward header -F Y + processed data
+	 * - Without open connections: process both X then Y on same CPU
+	 *
+	 * Non-chain mode (no -K):
+	 * - Single digit: process that function
+	 * - Multi-digit: process all digits left-to-right (21 -> 2 then 1)
 	 */
-	{
+	// printf("[offrac_process] DEBUG: ctx.chain_mode=%d, is_server_response=%d, open_conn=%d\n",
+	//        ctx.chain_mode, conn->is_server_response, ctx.server_response_port != 0);
+	// fflush(stdout);
+	
+	if (ctx.chain_mode) {
+		/* Chain mode (-K): behavior depends on open-connection mode */
 		int func_code = conn->func;
+		
+		if (conn->is_server_response && ctx.server_response_port != 0) {
+			/* Response connection in chain mode with open connections:
+			 * Process ONLY the first digit, then forward with header containing second digit. */
+			int original_func = conn->server_request_conn->func; // Get original func from request
+			int first_digit = (original_func >= 10) ? original_func / 10 : original_func;
+			// printf("[offrac_process] BRANCH: Chain mode (-K) response - process ONLY first digit=%d from func=%d, forward func=%d\n", 
+			//        first_digit, original_func, func_code);
+			// fflush(stdout);
+			apply_single_function(first_digit, mbuf->data, conn->req_size, input_buf);
+		} else if (ctx.server_response_port != 0) {
+			/* Request connection in chain mode with open connections:
+			 * Process ONLY the first digit, output will be forwarded. */
+			int first_digit = (func_code >= 10) ? func_code / 10 : func_code;
+			// printf("[offrac_process] BRANCH: Chain mode request (open-conn) - process first digit=%d from func=%d\n",
+			//        first_digit, func_code);
+			// fflush(stdout);
+			apply_single_function(first_digit, mbuf->data, conn->req_size, input_buf);
+		} else {
+			/* Chain mode WITHOUT open connections: process both digits left-to-right */
+			if (func_code >= 10) {
+				int first_digit = func_code / 10;
+				int second_digit = func_code % 10;
+				
+				// printf("[offrac_process] BRANCH: Chain mode local (no open-conn) - process %d then %d\n",
+				//        first_digit, second_digit);
+				// fflush(stdout);
+				
+				/* Allocate temp buffer for intermediate result */
+				size_t buf_size = (conn->req_size > MBUF_SIZE) ? conn->req_size : MBUF_SIZE;
+				uint8_t *tmp_buf = (uint8_t *)malloc(buf_size);
+				if (tmp_buf == NULL) {
+					fprintf(stderr, "[offrac_process] Failed to allocate temp buffer\n");
+					memcpy(mbuf->data, input_buf, MIN(conn->req_size, MBUF_SIZE));
+				} else {
+					/* Process first digit */
+					apply_single_function(first_digit, tmp_buf, conn->req_size, input_buf);
+					/* Process second digit */
+					apply_single_function(second_digit, mbuf->data, conn->req_size, tmp_buf);
+					free(tmp_buf);
+				}
+			} else {
+				/* Single digit */
+				apply_single_function(func_code, mbuf->data, conn->req_size, input_buf);
+			}
+		}
+	} else {
+		/* Non-chain mode (no -K): process ALL functions */
+		int func_code = conn->func;
+		
+		/* For response connections with open connections in non-chain mode,
+		 * we need to process ALL digits (both 2 and 1 from func=21) */
+		if (conn->is_server_response && ctx.server_response_port != 0) {
+			int original_func = conn->server_request_conn->func; // Get original func from request
+			// printf("[offrac_process] BRANCH: Non-chain mode response - process ALL digits from func=%d\n", 
+			//        original_func);
+			// fflush(stdout);
+			
+			/* Process all digits left-to-right */
+			if (original_func >= 10) {
+				int first_digit = original_func / 10;
+				int second_digit = original_func % 10;
+				
+				size_t buf_size = (conn->req_size > MBUF_SIZE) ? conn->req_size : MBUF_SIZE;
+				uint8_t *tmp_buf = (uint8_t *)malloc(buf_size);
+				if (tmp_buf == NULL) {
+					fprintf(stderr, "[offrac_process] Failed to allocate temp buffer\n");
+					memcpy(mbuf->data, input_buf, MIN(conn->req_size, MBUF_SIZE));
+				} else {
+					/* Process first digit */
+					apply_single_function(first_digit, tmp_buf, conn->req_size, input_buf);
+					/* Process second digit */
+					apply_single_function(second_digit, mbuf->data, conn->req_size, tmp_buf);
+					free(tmp_buf);
+				}
+			} else {
+				/* Single digit */
+				apply_single_function(original_func, mbuf->data, conn->req_size, input_buf);
+			}
+			goto done_processing;
+		}
+		
+		/* Non-chain mode: process multi-digit func left-to-right (e.g., 21 -> 2 then 1) */
 		/* Fast path: single known function id */
 		if (func_code == SPARSE_TRANSFER || func_code == MAPID ||
 		    func_code == LOGIT || func_code == NORM || func_code == TOPK) {
-			if (ctx.server_debug && conn->pkt_idx == 0) {
-				printf("[offrac_process] Fast path: func=%d, req_size=%u, len=%d, input_buf=%p, mbuf->data=%p\n",
-				       func_code, conn->req_size, len, (void*)input_buf, (void*)mbuf->data);
-			}
+			printf("[offrac_process] BRANCH: Non-chain mode - fast path single func=%d\n", func_code);
+			fflush(stdout);
 			if (func_code == SPARSE_TRANSFER) {
 				sparse_transfer(mbuf->data, conn->req_size, input_buf);
 			} else if (func_code == MAPID) {
@@ -462,50 +580,44 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 				topk(mbuf->data, conn->req_size, input_buf);
 			}
 		} else {
-			/* Chaining path: ping-pong through two temporary buffers */
+			/* Multi-digit func: process left-to-right (e.g., 21 -> process 2, then 1) */
+			/* Extract digits into array for left-to-right processing */
+			int digits[10];
+			int num_digits = 0;
+			int code = func_code;
+			
+			while (code > 0 && num_digits < 10) {
+				digits[num_digits++] = code % 10;
+				code /= 10;
+			}
+			
+			// printf("[offrac_process] BRANCH: Non-chain mode - multi-digit func=%d, num_digits=%d\n",
+			//        func_code, num_digits);
+			// fflush(stdout);
+			
 			/* Use heap allocation to avoid stack overflow for large request sizes */
 			size_t buf_size = (conn->req_size > MBUF_SIZE) ? conn->req_size : MBUF_SIZE;
 			uint8_t *tmp_a = (uint8_t *)malloc(buf_size);
 			uint8_t *tmp_b = (uint8_t *)malloc(buf_size);
 			
-			/* Safety check - ensure buffers allocated successfully */
-			
 			if (tmp_a == NULL || tmp_b == NULL) {
 				fprintf(stderr, "[offrac_process] Failed to allocate %zu bytes for chaining buffers\n", buf_size);
 				if (tmp_a) free(tmp_a);
 				if (tmp_b) free(tmp_b);
-				/* Fallback: just copy input to output */
 				memcpy(mbuf->data, input_buf, MIN(conn->req_size, MBUF_SIZE));
 			} else {
 				void *in_ptr = input_buf;
 				void *out_ptr = tmp_a;
-				int code = func_code;
-				while (code > 0) {
-					int digit = code % 10; /* rightmost digit first */
-					switch (digit) {
-					case 1: /* SPARSE_TRANSFER */
-						sparse_transfer(out_ptr, conn->req_size, in_ptr);
-						break;
-					case 2: /* MAPID */
-						mapid(out_ptr, conn->req_size, in_ptr);
-						break;
-					case 3: /* LOGIT */
-						logit(out_ptr, conn->req_size, in_ptr);
-						break;
-					case 5: /* NORM */
-						norm(out_ptr, conn->req_size, in_ptr);
-						break;
-					case 6: /* TOPK */
-						topk(out_ptr, conn->req_size, in_ptr);
-						break;
-					case 7: /* CNN removed - no longer supported */
-						/* CNN has been removed; pass-through */
-						memcpy(out_ptr, in_ptr, MIN(conn->req_size, buf_size));
-						break;
-					default:
-						/* Unknown step: pass-through */
-						memcpy(out_ptr, in_ptr, MIN(conn->req_size, buf_size));
+				
+				/* Process digits left-to-right (reverse of extraction order) */
+				for (int i = num_digits - 1; i >= 0; i--) {
+					int digit = digits[i];
+					
+					if (ctx.server_debug) {
+						printf("[offrac_process] Processing digit %d (index %d)\n", digit, i);
 					}
+					
+					apply_single_function(digit, out_ptr, conn->req_size, in_ptr);
 
 					/* flip buffers for next stage */
 					if (in_ptr == input_buf) {
@@ -516,15 +628,47 @@ static int offrac_process(struct test_thread *thread, struct connection *conn, s
 						in_ptr = out_ptr;
 						out_ptr = prev_out;
 					}
-					code /= 10;
 				}
 				/* Final result is in in_ptr after the last swap; copy to mbuf->data */
 				memcpy(mbuf->data, in_ptr, MIN(conn->req_size, MBUF_SIZE));
 				
-				/* Free the temporary buffers */
 				free(tmp_a);
 				free(tmp_b);
 			}
+		}
+	}
+
+done_processing:
+	/*
+	 * Chain mode with open connections: prepend test_info header with forwarded function ID.
+	 * This allows the next server in the chain to know what function to process.
+	 */
+	if (ctx.chain_mode && ctx.server_response_port != 0 && conn->is_server_response) {
+		/* Allocate buffer for header + payload */
+		size_t header_size = sizeof(struct test_info);
+		size_t payload_size = MIN(conn->write.budget - header_size, MBUF_SIZE - header_size);
+		struct test_info chain_header;
+		
+		/* Prepare the forwarded header */
+		memset(&chain_header, 0, sizeof(chain_header));
+		chain_header.test = conn->test;
+		chain_header.message_size = conn->message_size;
+		chain_header.enable_zwrite = conn->enable_zwrite;
+		chain_header.integrity_enabled = 0;
+		chain_header.integrity_off = 0;
+		chain_header.response_size = conn->response_size;
+		chain_header.func = conn->func;  /* This is the second digit (forward function) */
+		chain_header.req_size = conn->req_size;
+		
+		/* Copy header to beginning of mbuf, then payload after */
+		memmove(mbuf->data + header_size, mbuf->data, payload_size);
+		memcpy(mbuf->data, &chain_header, header_size);
+		
+		len = MIN(conn->write.budget, MBUF_SIZE);
+		
+		if (ctx.server_debug) {
+			printf("[offrac_process] Chain mode: prepended header with func=%d, total_len=%d\n",
+			       chain_header.func, len);
 		}
 	}
 

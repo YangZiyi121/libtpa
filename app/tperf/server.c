@@ -51,6 +51,22 @@ static struct connection *server_response_pop(struct test_thread *thread)
 	return conn;
 }
 
+/* Helper to extract chain function digits from -F XY
+ * Returns: first_digit (to process locally), second_digit (to forward)
+ * For single digit, first_digit = digit, second_digit = 0 */
+static void extract_chain_digits(int func, int *first_digit, int *second_digit)
+{
+	if (func < 10) {
+		/* Single digit: process locally, no forward */
+		*first_digit = func;
+		*second_digit = 0;
+	} else {
+		/* Multi-digit: first digit is tens place, second is ones place */
+		*first_digit = func / 10;  /* e.g., 21 -> 2 */
+		*second_digit = func % 10; /* e.g., 21 -> 1 */
+	}
+}
+
 void server_bind_pair(struct connection *request, struct connection *response)
 {
 	request->server_response_conn = response;
@@ -60,18 +76,39 @@ void server_bind_pair(struct connection *request, struct connection *response)
 	response->server_request_conn = request;
 	response->test = request->test;
 	response->response_size = request->response_size;
-	response->func = request->func;
 	response->req_size = request->req_size;
 	response->message_size = request->message_size;
 	response->enable_zwrite = request->enable_zwrite;
+
+	/* Chain mode: extract function to forward from second digit */
+	if (ctx.chain_mode && request->func >= 10) {
+		int first_digit, second_digit;
+		extract_chain_digits(request->func, &first_digit, &second_digit);
+		response->func = second_digit;  /* Forward with this function ID */
+		if (ctx.server_debug) {
+			printf("[server-debug] Chain mode: request func=%d, process=%d, forward func=%d\n",
+			       request->func, first_digit, second_digit);
+		}
+	} else {
+		response->func = request->func;
+	}
 
 	/* Don't copy the buffer pointer - response will read from request connection.
 	 * This prevents any double-free issues. */
 	response->reassemble.reassembly_buf = NULL;
 	response->reassemble.off = 0;
 
-	/* Set write budget to response size */
-	response->write.budget = request->response_size;
+	/* Set write budget to response size.
+	 * In chain mode, add header size since we prepend test_info. */
+	if (ctx.chain_mode) {
+		response->write.budget = request->response_size + sizeof(struct test_info);
+		if (ctx.server_debug) {
+			printf("[server-debug] Chain mode: write.budget=%zu (response_size=%u + header=%zu)\n",
+			       response->write.budget, request->response_size, sizeof(struct test_info));
+		}
+	} else {
+		response->write.budget = request->response_size;
+	}
 	response->write.off = 0;
 	response->read.budget = 0;
 	response->read.off = 0;
@@ -174,7 +211,7 @@ void init_server_conn(struct connection *conn)
 	conn->message_size = message_size;
 	conn->response_size = response_size;
 	conn->func = conn->info.func;
-	
+
 	/* Allocate or reallocate reassembly buffer if needed */
 	if (conn->reassemble.reassembly_buf == NULL) {
 		/* First time: allocate new buffer */

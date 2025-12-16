@@ -121,6 +121,12 @@ int compare_desc(const void *a, const void *b) {
 
 int sparse_transfer(void* out_buf , int req_size, void* in_buf)
 {
+    static int call_count = 0;
+    call_count++;
+    // printf("[sparse_transfer] CALLED #%d: req_size=%d, sparse_printed_once=%d\n", 
+    //        call_count, req_size, sparse_printed_once);
+    // fflush(stdout);
+    
     uint32_t *input = (uint32_t *)in_buf;
     uint32_t *output = (uint32_t *)out_buf;
 
@@ -199,13 +205,16 @@ int sparse_transfer(void* out_buf , int req_size, void* in_buf)
                req_size, bytes_required, padded_bytes);
         printf("[sparse_transfer] Rows: %d; NNZ: %d; Required elements: %d; Capacity elements: %d\n",
                num_rows, nnz, required_written, total_elements);
+        fflush(stdout);
         if (print_in > 0) {
             printf("[sparse_transfer] Input (first %d bytes):\n", print_in);
             hexdump((const uint8_t *)in_buf, print_in);
+            fflush(stdout);
         }
         if (print_out > 0) {
             printf("[sparse_transfer] Output (first %d bytes):\n", print_out);
             hexdump((const uint8_t *)out_buf, print_out);
+            fflush(stdout);
         }
     }
 
@@ -270,7 +279,6 @@ int logit(void* out_buf , int req_size, void* in_buf) {
 }
 
 int topk(void* out_buf , int req_size, void* in_buf) {
-    // fprintf(stderr, "[tperf] top k called (req_size=%d)\n", req_size);
     int k = 16;
     int size = req_size/sizeof(uint32_t);
     // Check if k is valid
@@ -303,9 +311,16 @@ int topk(void* out_buf , int req_size, void* in_buf) {
 }
 
 int mapid(void* out_buf , int req_size, void* in_buf) {
+    static int call_count = 0;
+    call_count++;
+    // printf("[mapid] CALLED #%d: req_size=%d, g_idmap=%p, mapid_printed_once=%d\n", 
+    //        call_count, req_size, (void*)g_idmap, mapid_printed_once);
+    // fflush(stdout);
+    
     // Ensure idmap is initialized
     if (!g_idmap) {
         fprintf(stderr, "Error: g_idmap not initialized\n");
+        fflush(stderr);
         return -1;
     }
     
@@ -329,13 +344,16 @@ int mapid(void* out_buf , int req_size, void* in_buf) {
         int print_out = (size * (int)sizeof(uint32_t)) > 256 ? 256 : (size * (int)sizeof(uint32_t));
         printf("[mapid] Input size: %d; Processed: %d; Output bytes: %d\n", req_size, process_bytes, size * (int)sizeof(uint32_t));
         printf("[mapid] Words processed: %d\n", size);
+        fflush(stdout);
         if (print_in > 0) {
             printf("[mapid] Input (first %d bytes):\n", print_in);
             hexdump((const uint8_t *)in_buf, print_in);
+            fflush(stdout);
         }
         if (print_out > 0) {
             printf("[mapid] Output (first %d bytes):\n", print_out);
             hexdump((const uint8_t *)out_buf, print_out);
+            fflush(stdout);
         }
     }
 

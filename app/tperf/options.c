@@ -49,6 +49,8 @@ void usage(void)
 			"  -S start_cpu      specifies the starting cpu to bind\n"
 			"  -A addr           client address to open response connections to\n"
 			"  -B port           base port for response connections (thread i uses port+i)\n"
+			"  -K                chain mode: for -F XY, process func X only, forward header -F Y\n"
+			"                    to opened connections. Without -K, process both X then Y locally\n"
 			"\n"
 			"The supported test modes are:\n"
 			"  * read            read data from the server end\n"
@@ -107,7 +109,8 @@ int parse_options(int argc, char **argv)
 	ctx.server_response_addr = NULL;
 	ctx.server_response_port = 0;
 	ctx.server_debug = 0;
-	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:P:S:W:R:F:X:Z:L:D:A:B:Gisqh")) != -1) {
+	ctx.chain_mode = 0;
+	while ((opt = getopt(argc, argv, "c:C:t:d:l:m:n:p:P:S:W:R:F:X:Z:L:D:A:B:GKisqh")) != -1) {
 		switch (opt) {
 		case 's':
 			ctx.is_client = 0;
@@ -179,7 +182,7 @@ int parse_options(int argc, char **argv)
 		      break;
 
 		case 'F':
-		      PARSE_NUM(ctx.func, optarg, NUM_TYPE_SIZE, "function");
+		      PARSE_NUM(ctx.func, optarg, NUM_TYPE_NONE, "function");
 		      break;
 
 		case 'X':
@@ -204,6 +207,10 @@ int parse_options(int argc, char **argv)
 
 		case 'G':
 			ctx.fpga_debug = 1;
+			break;
+
+		case 'K':
+			ctx.chain_mode = 1;
 			break;
 
 		case 'L':
@@ -273,10 +280,10 @@ int parse_options(int argc, char **argv)
 		ctx.fpga_debug = 0;
 
 		/* Debug: print parsed values */
-		printf("[options] Server mode: nr_thread=%d, nr_ports=%d, response_addr=%s, response_port=%d, debug=%d\n",
+		printf("[options] Server mode: nr_thread=%d, nr_ports=%d, response_addr=%s, response_port=%d, debug=%d, chain_mode=%d\n",
 		       ctx.nr_thread, ctx.nr_ports,
 		       ctx.server_response_addr ? ctx.server_response_addr : "(null)",
-		       ctx.server_response_port, ctx.server_debug);
+		       ctx.server_response_port, ctx.server_debug, ctx.chain_mode);
 
 		/* Validate server response connection settings */
 		if (ctx.server_response_port != 0) {

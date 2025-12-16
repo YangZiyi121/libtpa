@@ -110,6 +110,9 @@ struct ctx {
 	int server_response_port;
 	int server_debug;
 
+	/* Chain mode: process function X then forward with header -F Y (from -F XY) */
+	int chain_mode;
+
 	struct test_thread *threads;
 	struct thread_stats *stats;
 

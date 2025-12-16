@@ -7,7 +7,7 @@ BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scali
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(12 1 1 1)           # Varying -F
+F_VALUES=(21 1 1 1)           # Varying -F
 R_VALUES=(1024 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
 N_VALUES=(20 1 1 1)
