@@ -791,12 +791,12 @@ static int setup_test_data(struct test_thread *thread, struct connection *conn, 
 		/* Print the first request (header + payload) once, across chunks */
 		if (conn->is_client && !printed_first_request) {
 			if (first_req_printed == 0) {
-				first_req_to_print = (conn->fpga_srv == 1) ? (size_t)conn->message_size
+				first_req_to_print = (conn->fpga_srv == 1) ? (size_t)conn->req_size
 							    : (size_t)conn->req_size + sizeof(struct test_info);
-				printf("[tperf] First request total=%zu bytes (header=%zu, payload=%zu)\n",
-				       first_req_to_print,
-				       (size_t)sizeof(struct test_info),
-				       (conn->fpga_srv == 1) ? (size_t)(first_req_to_print - 64)
+			printf("[tperf] First request total=%zu bytes (header=%zu, payload=%zu)\n",
+			       first_req_to_print,
+			       (size_t)sizeof(struct test_info),
+			       (conn->fpga_srv == 1) ? (size_t)conn->req_size
 								   : (size_t)conn->req_size);
 			}
 			size_t remaining = first_req_to_print - first_req_printed;
@@ -846,15 +846,16 @@ static void on_write_done(struct connection *conn, int bytes_write)
 	conn->write.off += bytes_write;
 	/* Use Z (fpga_srv) to select CPU vs FPGA completion logic */
 	if (conn->fpga_srv == 1) {
-		/* FPGA */
-		if ((conn->is_client && (conn->write.off < conn->req_size)) ||
-		    (!conn->is_client && (conn->write.off < conn->write.budget))) {
+		/* FPGA: client completion based on req_size; server on write.budget */
+		size_t target = conn->is_client ? conn->req_size : conn->write.budget;
+		if (conn->write.off < target)
 			return;
-		}
-		if (conn->is_client) {
-			assert(conn->write.off == conn->req_size);
-		} else {
-			assert(conn->write.off == conn->write.budget);
+		if (conn->write.off != target) {
+			fprintf(stderr,
+			        "[fpga] write mismatch: is_client=%d sid=%d write.off=%zu target=%zu req_size=%u budget=%zu pkt_idx=%u\n",
+			        conn->is_client, conn->sid, conn->write.off, target,
+			        conn->req_size, conn->write.budget, conn->pkt_idx);
+			return;
 		}
 	} else {
 		/* CPU */

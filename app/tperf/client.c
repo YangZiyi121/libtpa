@@ -161,12 +161,14 @@ static struct connection *create_client_conn(struct test_thread *thread, int sid
 	case TEST_CRR:
 		conn->last_ns = get_time_in_ns();
 		conn->read.budget  = response_size;
-		/* Set write budget based on target: FPGA (Z=1) uses message_size; CPU uses req_size + header */
+		/* Set write budget based on target:
+		 * - FPGA (Z=1): honor the request size (-X) so large payloads don't truncate
+		 * - CPU: req_size + header (unchanged)
+		 */
 		if (conn->fpga_srv == 1) {
-			/* FPGA version */
-			conn->write.budget = conn->message_size;
+			/* FPGA: send req_size bytes (payload), header is overlaid in buffer */
+			conn->write.budget = conn->req_size;
 		} else {
-			/* CPU version: send payload of req_size plus the 64-byte test_info header */
 			conn->write.budget = conn->req_size + sizeof(struct test_info);
 		}
 		break;
