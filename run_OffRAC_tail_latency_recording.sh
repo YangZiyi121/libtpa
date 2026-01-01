@@ -3,14 +3,14 @@
 # Base command parameters
 
 #BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.106 -p 2888 -d 30 -t rr -Z 1"
-BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scaling = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.108 -d 30 -t rr -Z 1 -p 2888 -A 172.24.5.50 -B 3000 -G"
+BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scaling = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.108 -d 30 -t rr -Z 1 -A 172.24.5.50"
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(21 1 1 1)           # Varying -F
-R_VALUES=(1024 1024 1024 1024)        # Varying -R
+F_VALUES=(3 6 7 8)           # Varying -F
+R_VALUES=(960 960 960 960)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
-N_VALUES=(20 1 1 1)
+N_VALUES=(1 1 1 1)
 
 # Check that arrays have the same length
 if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#N_VALUES[@]} ]; then
@@ -19,7 +19,10 @@ if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[
 fi
 
 # Launch four processes in parallel
-for i in {0..0}; do
+BASE_B_PORT=3000
+BASE_P_PORT=2888
+offset=0
+for i in {0..1}; do
     F=${F_VALUES[$i]}
     R=${R_VALUES[$i]}
     X=${X_VALUES[$i]}
@@ -28,7 +31,7 @@ for i in {0..0}; do
 
     TPA_ID="client_$((i))"
     # Construct the log file name
-    START_CPU=$((i * 14))
+    START_CPU=$offset
     
     LOG_FILE="rr_d_30_m_${M}_n_${N}_f_${F}_O_1"
     
@@ -37,13 +40,17 @@ for i in {0..0}; do
     chmod -R 777 rr_d_30_m_${M}_n_${N}_f_${F}_O_1
     
     # Full command
-    CMD="sudo TPA_ID=$TPA_ID $BASE_CMD -n $N -m $M -F $F -R $R -X $X -S $START_CPU  -L 1 -D $LOG_FILE"
+    B=$((BASE_B_PORT + offset))
+    P=$((BASE_P_PORT + offset))
+    CMD="sudo TPA_ID=$TPA_ID $BASE_CMD -n $N -m $M -F $F -R $R -X $X -S $START_CPU  -L 1 -p $P -B $B -D $LOG_FILE"
     
     echo "Launching process $((i+1)): $CMD"
     eval "$CMD" &
     
     # Store the process ID
     PIDS[$i]=$!
+
+    offset=$((offset + N))
 done
 
 # Wait for all background processes to complete
