@@ -7,7 +7,7 @@ BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scali
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(3 6 7 8)           # Varying -F
+F_VALUES=(a b 5 9)           # Varying -F: a=nibble A, b=nibble B, 10=chain 1→0, 21=chain 2→1
 R_VALUES=(960 960 960 960)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
 N_VALUES=(1 1 1 1)
@@ -19,10 +19,10 @@ if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[
 fi
 
 # Launch four processes in parallel
-BASE_B_PORT=3000
+BASE_B_PORT=3100
 BASE_P_PORT=2888
 offset=0
-for i in {0..1}; do
+for i in {0..3}; do
     F=${F_VALUES[$i]}
     R=${R_VALUES[$i]}
     X=${X_VALUES[$i]}
@@ -31,7 +31,7 @@ for i in {0..1}; do
 
     TPA_ID="client_$((i))"
     # Construct the log file name
-    START_CPU=$offset
+    START_CPU=$((i * 7))
     
     LOG_FILE="rr_d_30_m_${M}_n_${N}_f_${F}_O_1"
     

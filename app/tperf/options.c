@@ -4,6 +4,7 @@
  * Author: Yuanhan Liu <liuyuanhan.131@bytedance.com>
  */
 #include <stdio.h>
+#include <string.h>
 
 #include <utils.h>
 
@@ -98,6 +99,7 @@ int parse_options(int argc, char **argv)
 	ctx.integrity_enabled = 0;
 	ctx.response_size = ctx.message_size;
 	ctx.func = 0;
+	ctx.func_hex_str[0] = '\0';
 	ctx.req_size = ctx.message_size;
 	ctx.fpga_srv = 0;
 	ctx.log = 0;
@@ -181,9 +183,30 @@ int parse_options(int argc, char **argv)
 		      PARSE_NUM(ctx.response_size, optarg, NUM_TYPE_SIZE, "response size");
 		      break;
 
-		case 'F':
-		      PARSE_NUM(ctx.func, optarg, NUM_TYPE_NONE, "function");
+		case 'F': {
+		      /* Store raw string for FPGA hex interpretation (fixed buffer) */
+		      snprintf(ctx.func_hex_str, sizeof(ctx.func_hex_str), "%s", optarg);
+
+		      /* If it contains hex alpha chars, parse as hex; otherwise decimal parse */
+		      if (strpbrk(optarg, "abcdefABCDEF") != NULL) {
+		      	char *endp = NULL;
+		      	errno = 0;
+		      	long v = strtol(optarg, &endp, 16);
+		      	if (errno == 0 && endp && *endp == '\0')
+		      		ctx.func = (int)v;
+		      	else {
+		      		ctx.func = 0;
+		      		errno = 0;
+		      	}
+		      } else {
+		      	ctx.func = tpa_parse_num(optarg, NUM_TYPE_NONE);
+		      	if (errno) {
+		      		ctx.func = 0;
+		      		errno = 0;
+		      	}
+		      }
 		      break;
+		}
 
 		case 'X':
 		      PARSE_NUM(ctx.req_size, optarg, NUM_TYPE_SIZE, "Multi Packet Request");

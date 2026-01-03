@@ -4,6 +4,7 @@
  * Author: Yuanhan Liu <liuyuanhan.131@bytedance.com>
  */
 #include <stdio.h>
+#include <string.h>
 
 #include "tperf.h"
 #include "offrac.h"
@@ -26,10 +27,26 @@ static size_t first_req_printed = 1;
 
 static uint16_t make_fpga_func_header(uint32_t func)
 {
-    char digits[32];
-    int len = snprintf(digits, sizeof(digits), "%u", func);
-    if (len < 0)
-        len = 0;
+    /* FPGA mode: interpret raw -F string as hex directly.
+     * Each character in the string becomes a hex nibble.
+     * Examples:
+     *   -F a   → string "a"  → header 0xFFFA (single nibble A)
+     *   -F 10  → string "10" → header 0xFF10 (nibbles 1, 0)
+     *   -F 21  → string "21" → header 0xFF21 (nibbles 2, 1)
+     *   -F abc → string "abc" → header 0xFABC (nibbles A, B, C)
+     */
+    const char *hex_str = ctx.func_hex_str;
+    char fallback_buf[32];
+    
+    /* Fallback to numeric conversion if no string stored */
+    if (hex_str == NULL || hex_str[0] == '\0') {
+        snprintf(fallback_buf, sizeof(fallback_buf), "%u", func);
+        hex_str = fallback_buf;
+    }
+
+    int len = strlen(hex_str);
+    if (len == 0)
+        return 0xFFFF;
 
     /* Use the rightmost up to 4 characters, pad the left with 'F' */
     int start = len > 4 ? len - 4 : 0;
@@ -43,9 +60,9 @@ static uint16_t make_fpga_func_header(uint32_t func)
     for (; pos < pad; pos++)
         header |= (uint16_t)0xF << ((3 - pos) * 4);
 
-    /* copy digits as hex nibbles */
+    /* Parse each character as a hex nibble */
     for (int i = 0; i < out_len; i++, pos++) {
-        char c = digits[start + i];
+        char c = hex_str[start + i];
         uint16_t nibble;
         if (c >= '0' && c <= '9')
             nibble = (uint16_t)(c - '0');
@@ -54,7 +71,7 @@ static uint16_t make_fpga_func_header(uint32_t func)
         else if (c >= 'A' && c <= 'F')
             nibble = (uint16_t)(10 + (c - 'A'));
         else
-            nibble = 0xF; /* fallback */
+            nibble = 0xF; /* fallback for invalid chars */
 
         header |= nibble << ((3 - pos) * 4);
     }

@@ -93,6 +93,7 @@ struct ctx {
 	int quiet;
 	int response_size;
 	int func;
+	char func_hex_str[32];  /* Raw hex string for FPGA mode (e.g., "a", "10", "21") */
 	int req_size;
 	uint8_t fpga_srv;
 	uint8_t log;
