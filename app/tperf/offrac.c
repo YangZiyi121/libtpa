@@ -15,9 +15,10 @@
 uint16_t *g_idmap = NULL;
 int g_idmap_loaded = 0;
 int mapid_printed_once = 0;
-int logit_printed_once = 1;
+int logit_printed_once = 0;
 int topk_printed_once = 1;
 int sparse_printed_once = 0;
+int norm_printed_once = 0;
 
 static void hexdump(const uint8_t *buf, int len)
 {
@@ -249,6 +250,17 @@ int norm(void* out_buf , int req_size, void* in_buf) {
     // Normalize the elements using min-max normalization
     for (int i = 0; i < size; i++) {
         float_buf[i] = (float_buf[i] - min_val) / (max_val - min_val);
+    }
+
+    if (!norm_printed_once) {
+        norm_printed_once = 1;
+        int trailing = req_size - size * (int)sizeof(uint32_t);
+        printf("[norm] Input size: %d bytes; Output size: %d bytes\n", req_size, req_size);
+        printf("[norm] Words processed: %d; Trailing bytes: %d\n", size, trailing);
+        printf("[norm] Input bytes (from in_buf):\n");
+        hexdump((const uint8_t *)in_buf, req_size);
+        printf("[norm] Output bytes (from out_buf):\n");
+        hexdump((const uint8_t *)out_buf, req_size);
     }
 
     return size;

@@ -3,14 +3,14 @@
 # Base command parameters
 
 #BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.106 -p 2888 -d 30 -t rr -Z 1"
-BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scaling = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.108 -d 30 -t rr -Z 1 -A 172.24.5.50"
+BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; } net { listen_scaling = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.106 -d 30 -t rr -Z 1 -A 172.24.5.50"
 
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(a b 5 9)           # Varying -F: a=nibble A, b=nibble B, 10=chain 1→0, 21=chain 2→1
-R_VALUES=(960 960 960 960)        # Varying -R
+F_VALUES=(0 a 5 9)           # Varying -F: a=nibble A, b=nibble B, 10=chain 1→0, 21=chain 2→1
+R_VALUES=(1024 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
-N_VALUES=(1 1 1 1)
+N_VALUES=(32 1 8 8)
 
 # Check that arrays have the same length
 if [ ${#F_VALUES[@]} -ne ${#R_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#X_VALUES[@]} ] || [ ${#F_VALUES[@]} -ne ${#N_VALUES[@]} ]; then
@@ -22,7 +22,7 @@ fi
 BASE_B_PORT=3100
 BASE_P_PORT=2888
 offset=0
-for i in {0..3}; do
+for i in {0..0}; do
     F=${F_VALUES[$i]}
     R=${R_VALUES[$i]}
     X=${X_VALUES[$i]}

@@ -2,12 +2,12 @@
 
 # Base command parameters
 #sudo TPA_ID=client TPA_ETH_DEV=enp194s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -c 172.24.5.50 -d 10 -n 4 -m 1024 -R 1024 -t rr -X 1024 -Z 0 -F 2 -S 0 -p 3000 -A 172.24.5.16 -B 4000 -G
-#sudo TPA_ID=server TPA_ETH_DEV=enp195s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -s -n 4 -S 1 -p 3000 -A 172.24.5.16 -B 4000 -G
+#sudo TPA_ID=server TPA_ETH_DEV=enp194s0f1np1 TPA_CFG="tcp {tso = 0; }" tpa run build/bin/app/tperf -s -n 1 -P 4 -S 1 -p 3000 -A 172.24.5.50 -B 4000
 #BASE_CMD="TPA_ETH_DEV=enp194s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.50 -p 3000 -d 30 -t rr -Z 0"
-BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.16 -d 30 -t rr -Z 0 -p 3000 -A 172.24.5.50 -B 3000"
+BASE_CMD="TPA_ETH_DEV=enp195s0f1np1 TPA_CFG=\"tcp {tso = 0; }\" tpa run build/bin/app/tperf -c 172.24.5.16 -d 30 -t rr -Z 0 -p 3000 -A 172.24.5.50 -B 4000"
 # Array of parameters for each process
 M_VALUES=(1024 1024 1024 1024)
-F_VALUES=(21 1 1 1)           # Varying -F
+F_VALUES=(5 1 1 1)           # Varying -F
 R_VALUES=(1024 1024 1024 1024)        # Varying -R
 X_VALUES=(1024 1024 1024 1024)    # Varying -X
 N_VALUES=(1 1 1 1)
@@ -28,7 +28,7 @@ for i in {0..0}; do
 
     TPA_ID="client_$((i))"
     # Construct the log file name
-    START_CPU=4
+    START_CPU=0
     
     LOG_FILE="rr_d_30_m_${M}_n_${N}_f_${F}_O_2"
     
